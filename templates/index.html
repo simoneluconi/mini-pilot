@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Mini-Pilot Studio | Director Station</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script type="text/javascript" src="https://unpkg.com/vis-timeline@latest/standalone/umd/vis-timeline-graph2d.min.js"></script>
+    <link href="https://unpkg.com/vis-timeline@latest/styles/vis-timeline-graph2d.min.css" rel="stylesheet" type="text/css" />
+    <style>
+        :root {
+            --bg-color: #0d0d0d; --card-bg: #1c1c1e; --card-border: #2c2c2e;
+            --text-color: #ffffff; --text-muted: #8e8e93; --accent-color: #0a84ff; --accent-hover: #006ce6;
+            --success-color: #30d158; --danger-color: #ff453a; --warning-color: #ffd60a;
+            --webhook-color: #af52de;
+        }
+
+        /* STRICT VIEWPORT - NESSUNO SCROLL GLOBALE */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            background-color: var(--bg-color); color: var(--text-color); 
+            padding: 12px; margin: 0; display: flex; flex-direction: column; 
+            height: 100vh; box-sizing: border-box; overflow: hidden; 
+            gap: 12px;
+        }
+
+        /* TOOLBAR */
+        .top-toolbar { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); padding: 8px 16px; border-radius: 8px; border: 1px solid var(--card-border); flex: 0 0 auto;}
+        .toolbar-brand h1 { margin: 0; font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 10px;}
+        .obs-status-badge { font-size: 10px; padding: 4px 10px; border-radius: 6px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; background: rgba(255, 69, 58, 0.2); border: 1px solid rgba(255, 69, 58, 0.5); color: var(--danger-color); margin-left: 15px; transition: all 0.3s; }
+        .obs-status-badge.connected { background: rgba(48, 209, 88, 0.2); border-color: rgba(48, 209, 88, 0.5); color: var(--success-color); }
+        
+        .project-controls { display: flex; align-items: center; gap: 8px; background: #000; padding: 6px 12px; border-radius: 6px; border: 1px solid #333; }
+        .project-controls label { font-size: 11px; color: var(--text-muted); font-weight: bold; text-transform: uppercase; }
+        .project-controls input, .project-controls select { padding: 4px 8px; font-size: 12px; width: 150px; height: 26px; margin: 0; background: #111; border: 1px solid #444; border-radius: 4px; color: white;}
+        .project-controls .btn-save { padding: 4px 12px; font-size: 12px; height: 26px; background-color: var(--success-color); color: #000; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; transition: 0.2s;}
+        .project-controls .btn-save:hover { background-color: #28a745; }
+        .divider-vert { width: 1px; height: 18px; background: #444; margin: 0 5px; }
+        
+        .toolbar-actions { display: flex; align-items: center; gap: 8px; }
+        .btn-toolbar { background: transparent; color: #ccc; border: 1px solid #555; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s; height: 26px;}
+        .btn-toolbar:hover { background: #333; color: white; }
+        .btn-toolbar.locked { border-color: var(--danger-color); color: var(--danger-color); background: rgba(255,69,58,0.1); }
+        .cameraman-link { color: var(--accent-color); text-decoration: none; font-weight: bold; font-size: 12px; transition: 0.2s; background: rgba(10, 132, 255, 0.1); padding: 4px 12px; border-radius: 4px; border: 1px solid rgba(10, 132, 255, 0.3); height: 26px; box-sizing: border-box; display: flex; align-items: center;}
+        .cameraman-link:hover { color: white; background: rgba(10, 132, 255, 0.3); }
+
+        /* UPPER WORKSPACE (Shot Builder + Rundown Table) */
+        .workspace-upper { display: flex; flex: 1 1 0; gap: 12px; min-height: 0; }
+
+        .card { background: var(--card-bg); border-radius: 8px; padding: 15px; border: 1px solid var(--card-border); display: flex; flex-direction: column; box-sizing: border-box; }
+        .card-title { margin: 0 0 10px 0; color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-weight: bold; display: flex; align-items: center; gap: 8px; flex: 0 0 auto;}
+
+        /* SHOT BUILDER (Colonna Sinistra) */
+        .col-left { width: 380px; flex-shrink: 0; display: flex; flex-direction: column; }
+        .input-group { display: flex; flex-direction: column; gap: 10px; flex: 0 0 auto; }
+        .row-inputs { display: flex; gap: 10px; align-items: center; }
+        .input-label { font-size: 10px; color: #888; text-transform: uppercase; margin-bottom: 4px; font-weight: bold; }
+        input, select { padding: 6px 10px; border-radius: 6px; background: #000; color: white; border: 1px solid #333; font-size: 13px; height: 32px; outline: none; transition: 0.2s; width: 100%; box-sizing: border-box; }
+        input:focus, select:focus { border-color: var(--accent-color); background: #111; }
+        
+        .btn-row { display: flex; gap: 8px; margin-top: auto; padding-top: 10px; flex: 0 0 auto;}
+        button { border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 13px; padding: 8px 15px; height: 34px; display: flex; justify-content: center; align-items: center; gap: 6px;}
+        button:active { transform: scale(0.98); }
+        .btn-primary { background-color: var(--accent-color); color: white; flex: 2; }
+        .btn-primary:hover { background-color: var(--accent-hover); }
+        .btn-secondary { background: transparent; color: #ccc; border: 1px solid #555; flex: 1;}
+        .btn-secondary:hover { background: #333; color: white; }
+
+        /* LIVE RUNDOWN TABLE (Colonna Destra espandibile) */
+        .col-right { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--card-border); overflow: hidden;}
+        .rundown-header { padding: 10px 15px; border-bottom: 1px solid #333; background: #161616; flex: 0 0 auto;}
+        .rundown-header h3 { margin: 0; color: #fff; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-weight: bold;}
+        .rundown-table-container { flex: 1 1 0; overflow-y: auto; background: var(--bg-color); min-height: 0;}
+        .rundown-table-container::-webkit-scrollbar { width: 6px; }
+        .rundown-table-container::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+        
+        .rundown-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+        .rundown-table th { background: #111; padding: 10px 12px; color: #888; text-transform: uppercase; font-size: 10px; letter-spacing: 1px; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid #333;}
+        .rundown-table td { padding: 8px 12px; border-bottom: 1px solid #222; color: #ccc; cursor: pointer; transition: 0.1s;}
+        .rundown-table tbody tr:hover td { background: rgba(255,255,255,0.05); color: white;}
+        .rundown-table tbody tr.active-row td { background: rgba(255, 69, 58, 0.25) !important; color: #fff !important; font-weight: bold; border-bottom-color: rgba(255, 69, 58, 0.4); }
+        .rundown-table tbody tr.active-row .col-shot { color: #fff !important; }
+        .rundown-table tbody tr.active-row .col-time { color: var(--warning-color) !important; }
+        .rundown-table .col-shot { font-weight: bold; color: var(--accent-color); width: 45px; }
+        .rundown-table .col-time { font-family: monospace; font-weight: bold; color: var(--warning-color); width: 75px;}
+        .rundown-table .scene-badge { padding: 3px 8px; border-radius: 4px; font-weight: bold; color: white; display: inline-block; font-size: 11px;}
+
+        /* CONSOLE CENTRALE Orizzontale */
+        .live-control-strip { 
+            display: flex; flex: 0 0 auto; background: var(--card-bg); 
+            border-radius: 8px; border: 1px solid var(--card-border); 
+            padding: 12px 15px; gap: 20px; align-items: stretch;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+        }
+        
+        .strip-section { display: flex; flex-direction: column; }
+        .strip-divider { width: 1px; background: #333; margin: 0 5px; flex-shrink: 0;}
+
+        /* Blocco 1: Impostazioni OBS */
+        .strip-setup { width: 180px; flex-shrink: 0; }
+        
+        /* Blocco 2: Master Playback & Timecode */
+        .strip-master { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; }
+        .btn-live { color: white; width: 100%; font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; transition: all 0.2s ease; height: 38px; border-radius: 6px;}
+        .btn-arm { background-color: #ff9f0a; color: #000; box-shadow: 0 2px 10px rgba(255, 159, 10, 0.3); }
+        .btn-arm:hover { background-color: #ffb340; transform: translateY(-1px); }
+        .btn-fire { background-color: var(--danger-color); box-shadow: 0 2px 15px rgba(255, 69, 58, 0.4); display: none; }
+        .btn-fire:hover { background-color: #ff5c53; transform: translateY(-1px); }
+        .btn-stop { background-color: #333; color: white; height: 38px; }
+        .btn-stop:hover { background-color: #444; }
+        
+        .status-display { background: #000; border-radius: 8px; padding: 12px 15px; border: 1px solid #222; text-align: center; transition: 0.3s; width: 100%; box-sizing: border-box; box-shadow: inset 0 0 15px rgba(0,0,0,0.8);}
+        .status-display.active-live { border-color: var(--danger-color); box-shadow: inset 0 0 15px rgba(0,0,0,0.8), 0 0 15px rgba(255,69,58,0.3); }
+        .status-display.active-armed { border-color: #ff9f0a; box-shadow: inset 0 0 15px rgba(0,0,0,0.8), 0 0 15px rgba(255,159,10,0.3); }
+        #status-bar { font-family: monospace; font-size: 40px; color: var(--warning-color); font-weight: bold; line-height: 1; margin: 8px 0; text-shadow: 0 0 15px rgba(255, 214, 10, 0.4);}
+        .status-label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 2px;}
+
+        .sync-controls { display: flex; justify-content: center; gap: 8px; width: 100%; margin-top: 8px;}
+        .btn-sync { background: #1a1a1a; border: 1px solid #444; color: #aaa; padding: 6px; font-size: 11px; height: 28px; border-radius: 4px; flex: 1; cursor: pointer; transition: 0.2s;}
+        .btn-sync:hover { background: #333; color: #fff; }
+        .btn-sync.active { background: var(--warning-color); color: #000; border-color: var(--warning-color); font-weight: bold; }
+
+        /* Blocco 3: Tally Matrix */
+        .strip-matrix { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column;}
+        .tally-matrix { display: flex; flex-wrap: wrap; gap: 8px; overflow-y: auto; align-content: flex-start; flex: 1; padding-right: 5px;}
+        .tally-matrix::-webkit-scrollbar { width: 6px; }
+        .tally-matrix::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+        .tally-btn { background: #111; border: 2px solid #333; color: #aaa; padding: 10px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; text-align: center; text-transform: uppercase; font-size: 13px; flex: 0 0 auto; width: 110px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+        .tally-btn:hover { background: #222; border-color: #555; color: white;}
+        .tally-btn.live { background: rgba(255,69,58,0.15); border-color: var(--danger-color); color: var(--danger-color); box-shadow: 0 0 10px rgba(255,69,58,0.3);}
+        .tally-btn.preview { background: rgba(48,209,88,0.15); border-color: var(--success-color); color: var(--success-color); box-shadow: 0 0 10px rgba(48,209,88,0.3);}
+        .key-badge { background: #333; padding: 2px 6px; border-radius: 4px; font-family: monospace; color: #fff; font-weight: bold; border: 1px solid #555; font-size: 11px; margin-right: 6px;}
+
+        /* Blocco 4: Intercom */
+        .strip-intercom { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: space-between;}
+
+        /* BOTTOM WORKSPACE */
+        .workspace-bottom { flex: 0 0 250px; display: flex; flex-direction: column; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--card-border); padding: 10px; box-sizing: border-box;}
+        .timeline-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 0 5px; flex: 0 0 auto;}
+        .timeline-title { font-size: 13px; font-weight: bold; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+        .transport-controls { display: flex; gap: 8px; }
+        .btn-transport { background: #222; border: 1px solid #444; color: white; padding: 6px 12px; height: 26px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 5px;}
+        .btn-transport:hover { background: #333; border-color: #666; }
+
+        /* VIS.JS TIMELINE OVERRIDES */
+        #timeline { flex: 1 1 0; min-height: 0; border: 1px solid #333; border-radius: 6px; overflow: hidden; background-color: #0a0a0c;} 
+        .vis-time-axis .vis-text { color: #888; font-size: 12px; }
+        .vis-panel.vis-background.vis-horizontal .vis-grid.vis-minor { border-color: #2a2a2a; }
+        .vis-panel.vis-background.vis-horizontal .vis-grid.vis-major { border-color: #444; }
+        
+        .vis-item { 
+            border: none !important; 
+            border-radius: 4px; 
+            padding: 0 !important; 
+            overflow: hidden; 
+            transition: filter 0.2s ease; 
+            cursor: pointer; 
+        }
+        .vis-item:hover { filter: brightness(1.15); z-index: 10 !important; }
+        .vis-item .vis-item-content { padding: 0 !important; width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
+
+        /* SELEZIONE E MANIGLIE DRAG */
+        .vis-item.vis-selected {
+            box-shadow: 0 0 0 2px white inset, 0 0 15px rgba(255, 255, 255, 0.6) !important;
+            z-index: 15 !important;
+            overflow: visible; /* permette ai bordi di non essere tagliati */
+        }
+        
+        .vis-item.vis-selected .vis-drag-left, 
+        .vis-item.vis-selected .vis-drag-right {
+            width: 14px;
+            background-color: rgba(255, 255, 255, 0.2);
+            z-index: 20 !important;
+            cursor: ew-resize;
+            transition: background-color 0.2s;
+        }
+        .vis-item.vis-selected .vis-drag-left:hover, 
+        .vis-item.vis-selected .vis-drag-right:hover {
+            background-color: rgba(255, 255, 255, 0.8);
+        }
+        .vis-item.vis-selected .vis-drag-left::after, 
+        .vis-item.vis-selected .vis-drag-right::after {
+            content: "⋮";
+            color: #fff;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-weight: bold;
+            font-size: 16px;
+            text-shadow: 1px 1px 2px #000;
+            pointer-events: none;
+        }
+
+        /* MODALS */
+        .modal { display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); backdrop-filter: blur(5px); align-items: center; justify-content: center; }
+        .modal-content { width: 400px; max-width: 90%; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 25px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
+    </style>
+</head>
+<body>
+    
+    <header class="top-toolbar">
+        <div class="toolbar-brand">
+            <h1>🎛️ Mini-Pilot <span class="obs-status-badge" id="obs-global-indicator">🔴 OBS Offline</span></h1>
+        </div>
+        <div class="project-controls">
+            <label>📁 Project</label>
+            <input type="text" id="comp-name" placeholder="Rundown Name...">
+            <button class="btn-save" onclick="saveCompilation()">💾 Save</button>
+            <div class="divider-vert"></div>
+            <select id="comp-select" onchange="loadCompilation()">
+                <option value="">-- Load Existing Project --</option>
+            </select>
+        </div>
+        <div class="toolbar-actions">
+            <button class="btn-toolbar" onclick="exportCSV()" title="Export Rundown to Excel/CSV">🗂️ CSV</button>
+            <button class="btn-toolbar" onclick="printRundown()" title="Print Camera Cards / Rundown">🖨️ Print</button>
+            <button id="btn-lock" class="btn-toolbar" onclick="toggleLock()" title="Safe Mode: Lock timeline edits" style="min-width: 115px;">🔓 Unlocked</button>
+            <button class="btn-toolbar" onclick="openSettings()" title="OBS Connection Settings">⚙️</button>
+            <a href="/camera" target="_blank" class="cameraman-link">🎥 Cam</a>
+            <a href="/talent" target="_blank" class="cameraman-link" style="border-color: rgba(255,214,10,0.5); color: var(--warning-color);">🎤 Tal</a>
+        </div>
+    </header>
+    
+    <div class="workspace-upper">
+        
+        <div class="col-left">
+            <div class="card" style="flex: 1 1 0; overflow-y: auto;">
+                <h3 class="card-title">🎬 ADD / EDIT ITEM</h3>
+                <div class="input-group">
+                    <div class="row-inputs">
+                        <div style="flex: 1;">
+                            <div class="input-label">Track Type</div>
+                            <select id="item-type" onchange="toggleItemType()">
+                                <option value="shot">🎥 Camera Shot</option>
+                                <option value="marker">📝 Lyric / Cue</option>
+                                <option value="webhook">🌐 Webhook Action</option>
+                            </select>
+                        </div>
+                        <div style="flex: 1;">
+                            <div class="input-label">Dur. (ms)</div>
+                            <input type="number" id="item-duration" value="5000" title="Duration (ms)">
+                        </div>
+                    </div>
+                    
+                    <div id="shot-fields" style="display: flex; flex-direction: column; gap: 10px;">
+                        <div class="row-inputs">
+                            <div style="flex: 2;">
+                                <div class="input-label">Scene</div>
+                                <select id="scene-select"><option>Loading scenes...</option></select>
+                            </div>
+                            <div style="flex: 1;">
+                                <div class="input-label">Movement</div>
+                                <select id="clip-movement">
+                                    <option value="">Static 🛑</option>
+                                    <option value="Pan">Pan ↔️</option>
+                                    <option value="Tilt">Tilt ↕️</option>
+                                    <option value="Zoom In">Zoom In 🔍</option>
+                                    <option value="Zoom Out">Zoom Out 🔎</option>
+                                    <option value="Tracking">Track 🎥</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row-inputs">
+                            <div style="flex: 2;">
+                                <div class="input-label">Transition</div>
+                                <select id="transition-select"><option value="Cut">Cut</option></select>
+                            </div>
+                            <div id="duration-container" style="flex: 1;">
+                                <div class="input-label">Tr. Ms</div>
+                                <input type="number" id="transition-duration" value="300" title="Duration (ms)">
+                            </div>
+                        </div>
+                        <div>
+                            <div class="input-label">Director's Note</div>
+                            <input type="text" id="clip-note" placeholder="Instructions for Cameraman">
+                        </div>
+                    </div>
+
+                    <div id="marker-fields" style="display: none; flex-direction: column; gap: 10px;">
+                        <div>
+                            <div class="input-label">Lyric / Prompter Text</div>
+                            <input type="text" id="marker-text" placeholder="e.g., 'Let's go back Before...'">
+                        </div>
+                    </div>
+
+                    <div id="webhook-fields" style="display: none; flex-direction: column; gap: 10px;">
+                        <div class="row-inputs">
+                            <div style="flex: 2;">
+                                <div class="input-label">Action Name</div>
+                                <input type="text" id="webhook-name" placeholder="e.g., 'Main Lights ON'">
+                            </div>
+                            <div style="flex: 1;">
+                                <div class="input-label">Method</div>
+                                <select id="webhook-method">
+                                    <option value="POST">POST</option>
+                                    <option value="GET">GET</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="input-label">Webhook URL</div>
+                            <input type="text" id="webhook-url" placeholder="https://api.example.com/trigger">
+                        </div>
+                        <div>
+                            <div class="input-label">Payload (JSON/Text)</div>
+                            <input type="text" id="webhook-payload" placeholder='{"action": "lights_on"}'>
+                        </div>
+                    </div>
+                    
+                    <div class="btn-row">
+                        <button id="btn-add-update" class="btn-primary" onclick="addOrUpdateClip()">+ Add Item</button>
+                        <button class="btn-secondary" onclick="clearTimeline()">🗑️ Clear</button>
+                        <button class="btn-secondary" onclick="resetForm()">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-right">
+            <div class="rundown-header">
+                <h3>📋 LIVE RUNDOWN</h3>
+            </div>
+            <div class="rundown-table-container">
+                <table class="rundown-table" id="live-rundown-table">
+                    <thead>
+                        <tr>
+                            <th class="col-shot">Shot</th>
+                            <th class="col-time">Time</th>
+                            <th>Scene / Event</th>
+                            <th>Move</th>
+                            <th>Trans</th>
+                            <th>Note / Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="6" style="text-align: center; color: #555; font-style: italic; padding: 20px;">No shots added yet...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONSOLE CENTRALE RIPARATA E CHIUSA CORRETTAMENTE -->
+    <div class="live-control-strip">
+        <div class="strip-section strip-setup">
+            <div class="input-label" style="color: var(--danger-color);">🔴 SYNC SETUP</div>
+            <div style="margin-top: 5px;">
+                <div class="input-label">Audio Trigger</div>
+                <input type="text" id="obs-audio-source" placeholder="'AudioTrack'" style="border-color: rgba(255,204,0,0.3);">
+            </div>
+            <div style="margin-top: 8px;">
+                <div class="input-label">Execution Mode</div>
+                <select id="live-mode-select" style="font-weight: bold; border-color: #555; text-align: center; color: var(--warning-color);">
+                    <option value="playback">▶️ Auto</option>
+                    <option value="override">⚡ Manual</option>
+                    <option value="record">⏺️ Record</option>
+                </select>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; margin-top: 10px;">
+                <input type="checkbox" id="obs-auto-record" style="width: auto; height: 14px; margin: 0; cursor: pointer;">
+                <label for="obs-auto-record" style="font-size: 10px; color: #888; font-weight: bold; cursor: pointer;">Auto-Start OBS Rec</label>
+            </div>
+        </div>
+
+        <div class="strip-divider"></div>
+
+        <div class="strip-section strip-master">
+            <div class="row-inputs" style="width: 100%; margin-bottom: 12px;">
+                <button id="btn-arm-show" class="btn-live btn-arm" style="flex: 2;" onclick="armShow()">⚠️ ARM SHOW</button>
+                <button id="btn-fire-show" class="btn-live btn-fire" style="flex: 2;" onclick="fireShow()">🚀 GO! (SPACE)</button>
+                <button class="btn-stop" style="flex: 1;" onclick="stopShow()">⏹ Stop</button>
+            </div>
+            <div id="master-status-display" class="status-display" style="width: 100%; box-sizing: border-box; margin-top: 0;">
+                <div class="status-label">MASTER TIMECODE</div>
+                <div id="status-bar">00:00.0</div>
+                <div class="sync-controls">
+                    <button class="btn-sync" onclick="nudgeTime(-0.1)">⏪ -100ms</button>
+                    <button class="btn-sync" id="btn-hold" onclick="toggleHold()">⏸ HOLD (H)</button>
+                    <button class="btn-sync" onclick="nudgeTime(0.1)">+100ms ⏩</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="strip-divider"></div>
+
+        <div class="strip-section strip-matrix">
+            <div class="input-label">🎛️ QUICK CUTS (MULTIVIEW)</div>
+            <div id="tally-matrix" class="tally-matrix">
+                <!-- Popolato via JS -->
+            </div>
+        </div>
+
+        <div class="strip-divider"></div>
+
+        <div class="strip-section strip-intercom">
+            <div>
+                <div class="input-label">🚨 STAGE PAGER</div>
+                <div class="row-inputs" style="margin-top: 5px;">
+                    <input type="text" id="urgent-msg" placeholder="Alert text..." style="border-color: var(--warning-color); flex: 1; height: 32px; padding: 0 10px;">
+                    <button class="btn-primary" style="background: var(--warning-color); color: #000; flex: 0 0 auto; padding: 0 12px; height: 32px;" onclick="sendUrgentMessage()" title="Send">🔔</button>
+                </div>
+            </div>
+            <button class="btn-danger" id="btn-ptt" style="background: var(--danger-color); border: none; border-radius: 6px; font-weight: 900; font-size: 16px; color: white; width: 100%; height: 46px; cursor: pointer; text-transform: uppercase; box-shadow: 0 4px 10px rgba(255,69,58,0.3);" title="Hold to speak to Studio">🎙️ PTT (HOLD)</button>
+        </div>
+    </div>
+
+    <!-- BOTTOM WORKSPACE -->
+    <div class="workspace-bottom">
+        <div class="timeline-header">
+            <div class="timeline-title">CUE TIMELINE</div>
+            <div class="transport-controls">
+                <button class="btn-transport" onclick="jumpToHome()" title="Jump to Start">⏮ Home</button>
+                <button class="btn-transport" onclick="jumpToPrev()" title="Previous Shot">◀ Prev</button>
+                <button class="btn-transport" onclick="jumpToNext()" title="Next Shot">Next ▶</button>
+            </div>
+        </div>
+        <div id="timeline"></div>
+    </div>
+
+    <!-- MODAL IMPOSTAZIONI OBS -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <h3 style="margin-top: 0; color: white; border-bottom: 1px solid #333; padding-bottom: 10px;">⚙️ OBS Connection Settings</h3>
+            <div class="input-group" style="margin-top: 15px;">
+                <div>
+                    <label style="font-size: 11px; color: #888; font-weight: bold; text-transform: uppercase;">Host IP</label>
+                    <input type="text" id="cfg-obs-host" value="localhost" style="margin-top: 4px;">
+                </div>
+                <div class="row-inputs">
+                    <div style="flex: 1;">
+                        <label style="font-size: 11px; color: #888; font-weight: bold; text-transform: uppercase;">Port</label>
+                        <input type="number" id="cfg-obs-port" value="4455" style="margin-top: 4px;">
+                    </div>
+                    <div style="flex: 2;">
+                        <label style="font-size: 11px; color: #888; font-weight: bold; text-transform: uppercase;">Password</label>
+                        <input type="password" id="cfg-obs-pwd" placeholder="OBS WebSocket Password" style="margin-top: 4px;">
+                    </div>
+                </div>
+                <div style="margin-top: 10px;">
+                    <label style="font-size: 11px; color: #888; font-weight: bold; text-transform: uppercase;">Hardware Tally Webhook URL (Optional)</label>
+                    <input type="text" id="cfg-webhook-url" placeholder="http://192.168.1.100/tally" style="margin-top: 4px;">
+                </div>
+                <div id="cfg-obs-status" style="font-size: 13px; font-weight: bold; margin-top: 10px; color: #aaa;">Status: Checking...</div>
+                <div class="btn-row" style="margin-top: 20px;">
+                    <button class="btn-primary" onclick="saveObsSettings()">🔌 Connect & Save</button>
+                    <button class="btn-secondary" onclick="closeSettings()">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="print-area"></div>
+
+    <script>
+        const socket = io();
+        let items = new vis.DataSet([]);
+        let timeline;
+        let allCompilations = {};
+        let isPlaying = false;
+        let isArmed = false; 
+        let editingId = null; 
+        let isUiLocked = false; 
+        let isUpdatingNumbers = false; 
+        let currentLiveTime = 0;
+        let lastRecordedItemId = null;
+        let availableScenes = [];
+
+        const HOTKEYS = ['1','2','3','4','5','6','7','8','9','0','q','w','e','r','t','y','u','i','o','p'];
+        const palette = ["#ff9900", "#34c759", "#007aff", "#af52de", "#ff2d55", "#5856d6", "#e5c07b"];
+        let sceneColors = {};
+
+        const groups = new vis.DataSet([
+            { id: 'webhooks', content: '🌐 WEBHOOKS', style: 'color: var(--webhook-color); font-weight: bold; font-size: 11px;' },
+            { id: 'markers', content: '📝 LYRICS / CUES', style: 'color: var(--warning-color); font-weight: bold; font-size: 11px;' },
+            { id: 'shots', content: '🎥 CAMERAS', style: 'color: var(--accent-color); font-weight: bold; font-size: 11px;' }
+        ]);
+
+        let mediaRecorder;
+        let audioChunks = [];
+        const pttBtn = document.getElementById('btn-ptt');
+
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+            mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+                socket.emit('intercom_audio', { audio: audioBlob, type: mediaRecorder.mimeType });
+                audioChunks = [];
+            };
+        }).catch(err => {
+            console.warn("Microphone access denied or unavailable for Intercom.", err);
+            if (pttBtn) {
+                pttBtn.title = "Microphone unavailable"; 
+                pttBtn.style.opacity = "0.5";
+            }
+        });
+
+        const startRecord = () => {
+            if (mediaRecorder && mediaRecorder.state === 'inactive' && pttBtn) {
+                mediaRecorder.start();
+                pttBtn.innerHTML = "🎙️ REC..."; pttBtn.style.background = "#ffffff"; pttBtn.style.color = "#ff3b30"; pttBtn.style.boxShadow = "0 0 15px rgba(255, 69, 58, 0.8)";
+            }
+        };
+
+        const stopRecord = () => {
+            if (mediaRecorder && mediaRecorder.state === 'recording' && pttBtn) {
+                mediaRecorder.stop();
+                pttBtn.innerHTML = "🎙️ PTT (HOLD)"; pttBtn.style.background = "var(--danger-color)"; pttBtn.style.color = "white"; pttBtn.style.boxShadow = "none";
+            }
+        };
+
+        if (pttBtn) {
+            pttBtn.addEventListener('mousedown', startRecord); 
+            pttBtn.addEventListener('mouseup', stopRecord);
+            pttBtn.addEventListener('mouseleave', stopRecord); 
+            pttBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecord(); }); 
+            pttBtn.addEventListener('touchend', (e) => { e.preventDefault(); stopRecord(); });
+        }
+
+        const container = document.getElementById('timeline');
+        const options = { 
+            height: '100%',
+            start: new Date(-2000), /* FIX: Inizia la vista prima dello zero per lasciare libera la maniglia sinistra! */
+            end: new Date(60000), 
+            editable: true, 
+            format: { minorLabels: { millisecond:'SSS', second: 's', minute: 'm:ss' }, majorLabels: { second: 'm:ss' } }, 
+            showCurrentTime: false, 
+            margin: { item: { horizontal: 0, vertical: 4 }, axis: 4 },
+            groupOrder: function (a, b) {
+                const order = { 'webhooks': 1, 'markers': 2, 'shots': 3 };
+                return order[a.id] - order[b.id];
+            }
+        };
+        timeline = new vis.Timeline(container, items, groups, options);
+        try { timeline.addCustomTime(new Date(0), 'cursor'); } catch(e) {}
+
+        function safeGetCursorTime() {
+            try { return timeline.getCustomTime('cursor').getTime(); } 
+            catch (e) { 
+                try { timeline.addCustomTime(new Date(0), 'cursor'); } catch(ex) {}
+                return 0; 
+            }
+        }
+
+        function updateActiveRundownRow(timeSec) {
+            let sorted = items.get({ order: function(a,b) { return (a.start || new Date(0)) - (b.start || new Date(0)); } });
+            
+            let activeItems = sorted.filter(c => {
+                if (!c.start || !c.end) return false;
+                return timeSec >= c.start.getTime()/1000 && timeSec < c.end.getTime()/1000;
+            });
+            
+            document.querySelectorAll('#live-rundown-table tbody tr').forEach(tr => tr.classList.remove('active-row'));
+            
+            activeItems.forEach(activeItem => {
+                const activeTr = document.getElementById(`row-${activeItem.id}`);
+                if (activeTr) {
+                    activeTr.classList.add('active-row');
+                    if (isPlaying && activeItem.itemType !== 'marker' && activeItem.itemType !== 'webhook') { 
+                        activeTr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                    }
+                }
+            });
+        }
+
+        timeline.on('timechange', function (event) {
+            if (event.id === 'cursor' && !isPlaying) {
+                try { updateActiveRundownRow(event.time.getTime() / 1000); } catch(e) {}
+            }
+        });
+
+        function toggleItemType() {
+            const type = document.getElementById('item-type').value;
+            document.getElementById('shot-fields').style.display = type === 'shot' ? 'flex' : 'none';
+            document.getElementById('marker-fields').style.display = type === 'marker' ? 'flex' : 'none';
+            document.getElementById('webhook-fields').style.display = type === 'webhook' ? 'flex' : 'none';
+        }
+
+        function updateShotNumbers() {
+            if(isUpdatingNumbers) return;
+            isUpdatingNumbers = true;
+            let sorted = items.get({ order: function(a,b) { return (a.start || new Date(0)) - (b.start || new Date(0)); } });
+            let toUpdate = [];
+            let shotCounter = 1;
+            sorted.forEach((item) => {
+                if(item.itemType === 'shot' || !item.itemType) {
+                    if(item.shotNumber !== shotCounter) {
+                        item.shotNumber = shotCounter;
+                        item.content = createDisplayContent(item.scene, item.note, item.transition, item.transition_duration, item.movement, shotCounter);
+                        toUpdate.push(item);
+                    }
+                    shotCounter++;
+                }
+            });
+            if(toUpdate.length > 0) items.update(toUpdate);
+            isUpdatingNumbers = false;
+            renderRundownTable(sorted);
+        }
+
+        items.on('add', updateShotNumbers); items.on('update', updateShotNumbers); items.on('remove', updateShotNumbers);
+
+        function renderRundownTable(sortedItems) {
+            const tbody = document.querySelector('#live-rundown-table tbody');
+            if (sortedItems.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #555; font-style: italic; padding: 20px;">No shots added yet...</td></tr>`;
+                return;
+            }
+            
+            let html = "";
+            sortedItems.forEach(item => {
+                if(!item.start) return;
+                const sec = item.start.getTime() / 1000;
+                const m = Math.floor(sec / 60).toString().padStart(2, '0');
+                const s = Math.floor(sec % 60).toString().padStart(2, '0');
+                const ms = Math.floor((sec % 1) * 10).toString();
+                
+                if (item.itemType === 'marker') {
+                    html += `<tr id="row-${item.id}" onclick="jumpToTime(${item.start.getTime()})" style="background: rgba(255,204,0,0.05);">
+                        <td colspan="5" style="color: #ffcc00; font-weight: bold; text-align: center; letter-spacing: 1px;">🚩 LYRIC / CUE: ${item.text}</td>
+                        <td class="col-time">${m}:${s}.${ms}</td>
+                    </tr>`;
+                } else if (item.itemType === 'webhook') {
+                    const displayName = item.name ? `${item.name} [${item.method}]` : item.method;
+                    html += `<tr id="row-${item.id}" onclick="jumpToTime(${item.start.getTime()})" style="background: rgba(175, 82, 222, 0.05);">
+                        <td colspan="5" style="color: var(--webhook-color); font-weight: bold; text-align: center; letter-spacing: 1px;">🌐 WEBHOOK: ${displayName} - ${item.url}</td>
+                        <td class="col-time">${m}:${s}.${ms}</td>
+                    </tr>`;
+                } else {
+                    let transText = item.transition === "Cut" ? "-" : `${item.transition} (${item.transition_duration}ms)`;
+                    let moveText = item.movement ? item.movement.replace(/[^\w\s]/gi, '') : "Static"; 
+                    
+                    html += `<tr id="row-${item.id}" onclick="jumpToTime(${item.start.getTime()})">
+                        <td class="col-shot">#${item.shotNumber}</td>
+                        <td class="col-time">${m}:${s}.${ms}</td>
+                        <td><span class="scene-badge" style="background: ${item.color}">${item.scene}</span></td>
+                        <td>${moveText}</td>
+                        <td style="color: #888; font-size: 11px;">${transText}</td>
+                        <td style="color: #ccc; font-style: italic;">${item.note || ''}</td>
+                    </tr>`;
+                }
+            });
+            tbody.innerHTML = html;
+            
+            const evalTime = isPlaying ? currentLiveTime : safeGetCursorTime() / 1000;
+            updateActiveRundownRow(evalTime);
+        }
+
+        function jumpToTime(ms) {
+            if (isPlaying) return; 
+            try { timeline.setCustomTime(new Date(ms), 'cursor'); } 
+            catch(e) { try { timeline.addCustomTime(new Date(ms), 'cursor'); } catch(ex) {} }
+            timeline.moveTo(new Date(ms), {animation: true});
+            updateActiveRundownRow(ms / 1000);
+        }
+        function jumpToHome() { jumpToTime(0); }
+        function jumpToPrev() {
+            if (isPlaying) return;
+            const currentMs = safeGetCursorTime();
+            let sorted = items.get({ order: function(a,b) { return (b.start || new Date(0)) - (a.start || new Date(0)); } }); 
+            for (let item of sorted) {
+                if (item.start && item.start.getTime() < currentMs - 100) { jumpToTime(item.start.getTime()); break; }
+            }
+        }
+        function jumpToNext() {
+            if (isPlaying) return;
+            const currentMs = safeGetCursorTime();
+            let sorted = items.get({ order: function(a,b) { return (a.start || new Date(0)) - (b.start || new Date(0)); } });
+            for (let item of sorted) {
+                if (item.start && item.start.getTime() > currentMs + 100) { jumpToTime(item.start.getTime()); break; }
+            }
+        }
+
+        function printRundown() {
+            let sorted = items.get({ order: function(a,b) { return (a.start || new Date(0)) - (b.start || new Date(0)); } });
+            if (sorted.length === 0) return alert("The rundown is empty!");
+            const projName = document.getElementById('comp-name').value || "Untitled Show";
+            let html = `<div class="print-header"><h1>🎥 Mini-Pilot Rundown</h1><p><strong>Project:</strong> ${projName} &nbsp;&nbsp;|&nbsp;&nbsp; <strong>Total Shots:</strong> ${sorted.filter(i=>i.itemType==='shot' || !i.itemType).length}</p></div><table><thead><tr><th style="width: 50px;">Shot</th><th style="width: 80px;">Time</th><th style="width: 150px;">Camera / Scene</th><th style="width: 100px;">Movement</th><th>Script / Note</th></tr></thead><tbody>`;
+            sorted.forEach((item) => {
+                if(!item.start || item.itemType === 'project_settings') return;
+                const sec = item.start.getTime() / 1000;
+                const m = Math.floor(sec / 60).toString().padStart(2, '0');
+                const s = Math.floor(sec % 60).toString().padStart(2, '0');
+                if (item.itemType === 'shot' || !item.itemType) {
+                    html += `<tr><td><strong>#${item.shotNumber}</strong></td><td>${m}:${s}</td><td><strong>${item.scene}</strong></td><td>${item.movement || 'Static'}</td><td>${item.note || ''}</td></tr>`;
+                }
+            });
+            html += `</tbody></table>`;
+            document.getElementById('print-area').innerHTML = html;
+            window.print();
+        }
+
+        function exportCSV() {
+            const name = document.getElementById('comp-name').value;
+            if(!name) return alert("Enter a project name and save it first!");
+            fetch('/api/compilations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, rundown: getRawData() }) })
+            .then(() => { window.location.href = `/api/export_csv/${encodeURIComponent(name)}`; });
+        }
+
+        function toggleLock() {
+            isUiLocked = !isUiLocked;
+            const btn = document.getElementById('btn-lock');
+            timeline.setOptions({ editable: !isUiLocked });
+            if (isUiLocked) { btn.innerHTML = "🔒 Locked"; btn.classList.add('locked'); } 
+            else { btn.innerHTML = "🔓 Unlocked"; btn.classList.remove('locked'); }
+        }
+
+        function openSettings() { document.getElementById('settings-modal').style.display = 'flex'; socket.emit('req_obs_status'); }
+        function closeSettings() { document.getElementById('settings-modal').style.display = 'none'; }
+        function saveObsSettings() {
+            const host = document.getElementById('cfg-obs-host').value;
+            const port = document.getElementById('cfg-obs-port').value;
+            const pwd = document.getElementById('cfg-obs-pwd').value;
+            const webhookUrl = document.getElementById('cfg-webhook-url').value;
+            document.getElementById('cfg-obs-status').innerText = "Status: Connecting...";
+            socket.emit('save_obs_config', {host: host, port: port, password: pwd, webhook_url: webhookUrl});
+        }
+
+        socket.on('obs_status', (data) => {
+            const modalStatus = document.getElementById('cfg-obs-status');
+            const globalBadge = document.getElementById('obs-global-indicator');
+            document.getElementById('cfg-obs-host').value = data.host || "localhost";
+            document.getElementById('cfg-obs-port').value = data.port || 4455;
+            document.getElementById('cfg-webhook-url').value = data.webhook_url || "";
+            if(data.connected) {
+                modalStatus.innerText = "Status: 🟢 Connected"; modalStatus.style.color = "var(--success-color)";
+                globalBadge.innerText = "🟢 OBS Connected"; globalBadge.classList.add('connected');
+                socket.emit('req_scenes_refresh'); 
+            } else {
+                modalStatus.innerText = "Status: 🔴 Disconnected (" + (data.error || "Check config") + ")";
+                modalStatus.style.color = "var(--danger-color)";
+                globalBadge.innerText = "🔴 OBS Offline"; globalBadge.classList.remove('connected');
+            }
+        });
+        socket.emit('req_obs_status');
+
+        timeline.on('select', function (properties) {
+            if (properties.items.length > 0 && !isUiLocked) {
+                const item = items.get(properties.items[0]);
+                editingId = item.id;
+                
+                document.getElementById('item-type').value = item.itemType || 'shot';
+                toggleItemType();
+                document.getElementById('item-duration').value = item.end && item.start ? item.end.getTime() - item.start.getTime() : 5000;
+                
+                if (item.itemType === 'marker') {
+                    document.getElementById('marker-text').value = item.text || "";
+                } else if (item.itemType === 'webhook') {
+                    document.getElementById('webhook-name').value = item.name || "";
+                    document.getElementById('webhook-method').value = item.method || 'POST';
+                    document.getElementById('webhook-url').value = item.url || "";
+                    document.getElementById('webhook-payload').value = item.payload || "";
+                } else {
+                    document.getElementById('scene-select').value = item.scene;
+                    document.getElementById('clip-note').value = item.note || "";
+                    document.getElementById('transition-select').value = item.transition || "Cut";
+                    document.getElementById('clip-movement').value = item.movement || "";
+                    updateTransitionUI();
+                    document.getElementById('transition-duration').value = item.transition_duration || 300;
+                }
+                const btn = document.getElementById('btn-add-update');
+                btn.innerText = "✓ Update"; btn.style.background = "var(--warning-color)"; btn.style.color = "#000";
+            } else if (!isUiLocked) { resetForm(); }
+        });
+
+        function resetForm() {
+            editingId = null; 
+            document.getElementById('item-type').value = 'shot'; toggleItemType();
+            document.getElementById('item-duration').value = 5000;
+            document.getElementById('clip-note').value = ""; document.getElementById('clip-movement').value = "";
+            document.getElementById('marker-text').value = "";
+            document.getElementById('webhook-name').value = "";
+            document.getElementById('webhook-method').value = "POST"; document.getElementById('webhook-url').value = ""; document.getElementById('webhook-payload').value = "";
+            document.getElementById('transition-select').value = "Cut"; updateTransitionUI();
+            document.getElementById('transition-duration').value = 300;
+            const btn = document.getElementById('btn-add-update');
+            btn.innerText = "+ Add Item"; btn.style.background = "var(--accent-color)"; btn.style.color = "#fff";
+            timeline.setSelection([]);
+        }
+
+        function clearTimeline() {
+            if(isUiLocked) return alert("Timeline is Locked! Unlock it first.");
+            if(confirm("Are you sure you want to clear the entire timeline?")) { items.clear(); lastRecordedItemId = null; }
+        }
+
+        function updateTransitionUI() {
+            const trans = document.getElementById('transition-select').value.toLowerCase();
+            const durContainer = document.getElementById('duration-container');
+            durContainer.style.display = (trans === 'cut' || trans === 'taglio') ? 'none' : 'block';
+        }
+        document.getElementById('transition-select').addEventListener('change', updateTransitionUI);
+
+        document.getElementById('live-mode-select').addEventListener('change', function(e) {
+            if (isPlaying) socket.emit('change_mode', { mode: e.target.value });
+        });
+
+        socket.on('scenes_list', (scenes) => {
+            availableScenes = scenes;
+            scenes.forEach((s, i) => sceneColors[s] = palette[i % palette.length]);
+            document.getElementById('scene-select').innerHTML = scenes.map(s => `<option value="${s}">${s}</option>`).join('');
+            
+            const matrix = document.getElementById('tally-matrix');
+            matrix.innerHTML = scenes.map((s, i) => {
+                let keyName = i < HOTKEYS.length ? HOTKEYS[i].toUpperCase() : '-';
+                return `<div class="tally-btn" id="tally-btn-${i}" onclick="executeLiveCut(${i})" title="${s}"><span class="key-badge">${keyName}</span><br><span style="display:block; margin-top:5px;">${s}</span></div>`;
+            }).join('');
+        });
+
+        socket.on('transitions_list', (transitions) => {
+            if (transitions.length > 0) {
+                document.getElementById('transition-select').innerHTML = transitions.map(t => `<option value="${t}">${t}</option>`).join('');
+                updateTransitionUI();
+            }
+        });
+
+        function refreshCompilationsList() {
+            fetch('/api/compilations').then(r => r.json()).then(data => {
+                allCompilations = data;
+                const select = document.getElementById('comp-select');
+                select.innerHTML = '<option value="">-- Load Existing Project --</option>' + Object.keys(data).map(name => `<option value="${name}">${name}</option>`).join('');
+            });
+        }
+        refreshCompilationsList();
+
+        function createDisplayContent(scene, note, trans, dur, movement, shotNum) {
+            let moveIcon = "";
+            if(movement === "Pan") moveIcon = "↔️"; else if(movement === "Tilt") moveIcon = "↕️";
+            else if(movement === "Zoom In") moveIcon = "🔍"; else if(movement === "Zoom Out") moveIcon = "🔎"; else if(movement === "Tracking") moveIcon = "🎥";
+
+            let html = `<div style="position: relative; width: 100%; height: 100%; box-sizing: border-box; padding: 4px 20px; display: flex; flex-direction: column; justify-content: center; overflow: hidden; text-shadow: 1px 1px 2px rgba(0,0,0,0.6); color: white;">`;
+            if (trans && trans.toLowerCase() !== "cut" && trans.toLowerCase() !== "taglio") {
+                html += `<div style="position: absolute; top: 0; right: 0; background: #111; color: var(--warning-color); font-size: 8px; padding: 2px 4px; border-bottom-left-radius: 6px; font-weight: bold; border-left: 1px solid #444; border-bottom: 1px solid #444; z-index: 2;">⧉ ${trans} ${dur}ms</div>`;
+            }
+            html += `<div style="display: flex; align-items: center; gap: 6px;">`;
+            html += `<span style="background: rgba(0,0,0,0.5); font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);">#${shotNum || '?'}</span>`;
+            html += `<div style="font-weight: 800; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 35px;">${scene}</div>`;
+            html += `</div>`;
+            html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; padding-left: 2px;">`;
+            if (note) html += `<div style="font-size: 11px; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #eee; flex-grow: 1;">📝 ${note}</div>`;
+            else html += `<div style="flex-grow: 1;"></div>`;
+            if (moveIcon) html += `<div style="font-size: 11px; margin-left: 4px; background: rgba(0,0,0,0.4); padding: 2px 4px; border-radius: 4px;" title="${movement}">${moveIcon}</div>`;
+            html += `</div></div>`;
+            return html;
+        }
+
+        function addOrUpdateClip() {
+            if(isUiLocked) return alert("Timeline is Locked! Unlock it first.");
+            
+            const type = document.getElementById('item-type').value;
+            const durationMs = parseInt(document.getElementById('item-duration').value) || 5000;
+            
+            let clipData = { itemType: type, shotNumber: 0 };
+            
+            if (type === 'shot') {
+                const sceneName = document.getElementById('scene-select').value;
+                const note = document.getElementById('clip-note').value;
+                const trans = document.getElementById('transition-select').value;
+                const transDur = document.getElementById('transition-duration').value;
+                const movement = document.getElementById('clip-movement').value;
+                const color = sceneColors[sceneName] || "#555";
+                
+                clipData.group = 'shots';
+                clipData.scene = sceneName; clipData.note = note; clipData.transition = trans;
+                clipData.transition_duration = transDur; clipData.movement = movement; clipData.color = color;
+                clipData.content = createDisplayContent(sceneName, note, trans, transDur, movement, "?");
+                clipData.style = `background-color: ${color}; border-color: ${color};`;
+            } else if (type === 'marker') {
+                const text = document.getElementById('marker-text').value;
+                clipData.group = 'markers';
+                clipData.text = text;
+                clipData.content = `<div style="padding: 4px 20px; font-weight: bold; color: #000; font-size: 12px; box-sizing: border-box; width: 100%; height: 100%; display: flex; align-items: center;">🚩 ${text}</div>`;
+                clipData.style = `background-color: var(--warning-color); color: #000; border-radius: 4px; border: 1px solid #cca100;`;
+            } else if (type === 'webhook') {
+                const name = document.getElementById('webhook-name').value;
+                const method = document.getElementById('webhook-method').value;
+                const url = document.getElementById('webhook-url').value;
+                const payload = document.getElementById('webhook-payload').value;
+                
+                clipData.group = 'webhooks';
+                clipData.name = name;
+                clipData.method = method;
+                clipData.url = url;
+                clipData.payload = payload;
+                const displayName = name || method;
+                clipData.content = `<div style="padding: 4px 20px; font-weight: bold; color: #fff; font-size: 11px; box-sizing: border-box; width: 100%; height: 100%; display: flex; align-items: center;">🌐 ${displayName}</div>`;
+                clipData.style = `background-color: var(--webhook-color); color: #fff; border-radius: 4px; border: 1px solid #8e3ebf;`;
+            }
+
+            if (editingId) { 
+                clipData.id = editingId; 
+                let oldItem = items.get(editingId);
+                clipData.start = oldItem.start; clipData.end = oldItem.end;
+                items.update(clipData); 
+            } else {
+                clipData.id = Date.now();
+                const currentMs = safeGetCursorTime();
+                clipData.start = new Date(currentMs); 
+                clipData.end = new Date(currentMs + durationMs); 
+                items.add(clipData);
+                jumpToTime(currentMs + durationMs);
+            }
+            resetForm(); 
+        }
+
+        function executeLiveCut(sceneIndex) {
+            if (!isPlaying) return;
+            const mode = document.getElementById('live-mode-select').value;
+            if (mode === 'playback') return;
+            if (sceneIndex < 0 || sceneIndex >= availableScenes.length) return;
+
+            const sceneName = availableScenes[sceneIndex];
+            const trans = document.getElementById('transition-select').value || "Cut";
+            const transDur = document.getElementById('transition-duration').value || 300;
+            const color = sceneColors[sceneName] || "#555";
+            
+            socket.emit('live_action', { scene: sceneName, transition: trans, transition_duration: transDur });
+
+            if (mode === 'record' && !isUiLocked) {
+                const displayContent = createDisplayContent(sceneName, "⏺️ Live Rec", trans, transDur, "", "?");
+                const startMs = currentLiveTime * 1000;
+                const newItemId = Date.now();
+
+                if (lastRecordedItemId && items.get(lastRecordedItemId)) items.update({ id: lastRecordedItemId, end: new Date(startMs) });
+
+                items.add({
+                    id: newItemId, group: 'shots', itemType: 'shot', content: displayContent, scene: sceneName, note: "Live Cut", transition: trans, transition_duration: transDur, movement: "", shotNumber: 0, color: color, style: `background-color: ${color}; border-color: ${color};`, start: new Date(startMs), end: new Date(startMs + 10000) 
+                });
+                lastRecordedItemId = newItemId;
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+            if (e.code === 'Space' && isArmed) { e.preventDefault(); fireShow(); return; }
+            if (!isPlaying) return;
+
+            if (e.code === 'ArrowLeft') { e.preventDefault(); nudgeTime(-0.1); return; }
+            if (e.code === 'ArrowRight') { e.preventDefault(); nudgeTime(0.1); return; }
+            if (e.code === 'KeyH') { e.preventDefault(); toggleHold(); return; }
+
+            const keyPressed = e.key.toLowerCase();
+            const sceneIndex = HOTKEYS.indexOf(keyPressed);
+            if (sceneIndex !== -1) {
+                e.preventDefault();
+                executeLiveCut(sceneIndex);
+            }
+        });
+
+        function sendUrgentMessage() {
+            const input = document.getElementById('urgent-msg');
+            if(!input.value.trim()) return;
+            socket.emit('send_urgent_message', { msg: input.value.trim() });
+            input.value = "";
+        }
+
+        function getRawData() { 
+            let sortedItems = items.get({ order: function(a,b) { return (a.start || new Date(0)) - (b.start || new Date(0)); } });
+            let exportedData = sortedItems.map(item => {
+                const startTime = item.start ? item.start.getTime() / 1000 : 0;
+                const endTime = item.end ? item.end.getTime() / 1000 : startTime + 5;
+                return { 
+                    itemType: item.itemType || 'shot',
+                    type: item.itemType || 'shot', 
+                    text: item.text || "", 
+                    scene: item.scene || "", 
+                    note: item.note || "", 
+                    transition: item.transition || "Cut", 
+                    transition_duration: item.transition_duration || 300, 
+                    movement: item.movement || "", 
+                    color: item.color || "#007aff",
+                    name: item.name || "",
+                    method: item.method || "POST",
+                    url: item.url || "",
+                    payload: item.payload || "",
+                    shotNumber: item.shotNumber || 0,
+                    start: startTime, 
+                    end: endTime 
+                };
+            }); 
+            
+            exportedData.push({
+                itemType: 'project_settings',
+                type: 'project_settings',
+                auto_record: document.getElementById('obs-auto-record').checked,
+                start: -1,
+                end: -1
+            });
+            
+            return exportedData;
+        }
+
+        function saveCompilation() { const name = document.getElementById('comp-name').value; if(!name) return alert("Enter a project name!"); fetch('/api/compilations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, rundown: getRawData() }) }).then(() => { alert('Project Saved!'); refreshCompilationsList(); }); }
+        
+        function loadCompilation() { 
+            if(isUiLocked) return alert("Timeline is Locked! Unlock it before loading."); 
+            const name = document.getElementById('comp-select').value; 
+            if(!name || !allCompilations[name]) return; 
+            document.getElementById('comp-name').value = name; 
+            items.clear(); 
+            
+            const projectData = allCompilations[name];
+            
+            const settingsItem = projectData.find(i => i.itemType === 'project_settings' || i.type === 'project_settings');
+            if(settingsItem) {
+                document.getElementById('obs-auto-record').checked = settingsItem.auto_record === true;
+            } else {
+                document.getElementById('obs-auto-record').checked = false;
+            }
+
+            const timelineData = projectData.filter(i => i.itemType !== 'project_settings' && i.type !== 'project_settings').map((item, i) => { 
+                const itemType = item.itemType || item.type || 'shot';
+                if (itemType === 'marker') {
+                    return {
+                        id: i, group: 'markers', itemType: 'marker', text: item.text,
+                        content: `<div style="padding: 4px 20px; font-weight: bold; color: #000; font-size: 12px; box-sizing: border-box; width: 100%; height: 100%; display: flex; align-items: center;">🚩 ${item.text}</div>`,
+                        style: `background-color: var(--warning-color); color: #000; border-radius: 4px; border: 1px solid #cca100;`,
+                        start: new Date(item.start * 1000), end: new Date(item.end * 1000)
+                    };
+                } else if (itemType === 'webhook') {
+                    const displayName = item.name || item.method;
+                    return {
+                        id: i, group: 'webhooks', itemType: 'webhook', name: item.name, method: item.method, url: item.url, payload: item.payload,
+                        content: `<div style="padding: 4px 20px; font-weight: bold; color: #fff; font-size: 11px; box-sizing: border-box; width: 100%; height: 100%; display: flex; align-items: center;">🌐 ${displayName}</div>`,
+                        style: `background-color: var(--webhook-color); color: #fff; border-radius: 4px; border: 1px solid #8e3ebf;`,
+                        start: new Date(item.start * 1000), end: new Date(item.end * 1000)
+                    };
+                } else {
+                    const color = item.color || sceneColors[item.scene] || "#007aff"; 
+                    const displayContent = createDisplayContent(item.scene, item.note, item.transition, item.transition_duration, item.movement, item.shotNumber || i+1); 
+                    return { id: i, group: 'shots', itemType: 'shot', content: displayContent, scene: item.scene, note: item.note, transition: item.transition, transition_duration: item.transition_duration, movement: item.movement, shotNumber: item.shotNumber || i+1, color: color, style: `background-color: ${color}; border-color: ${color};`, start: new Date(item.start * 1000), end: new Date(item.end * 1000) }; 
+                }
+            }); 
+            items.add(timelineData); 
+            resetForm(); 
+        }
+
+        function resetLiveUI() {
+            isPlaying = false; isArmed = false;
+            document.getElementById('btn-arm-show').style.display = 'flex';
+            document.getElementById('btn-fire-show').style.display = 'none';
+            document.getElementById('btn-fire-show').classList.remove('pulsing-live');
+            const display = document.getElementById('master-status-display');
+            if (display) display.classList.remove('active-live', 'active-armed');
+            document.getElementById('status-bar').innerText = "00:00.0"; 
+            document.getElementById('status-bar').style.color = "var(--warning-color)";
+            lastRecordedItemId = null;
+            document.getElementById('btn-hold').classList.remove('active');
+            document.getElementById('btn-hold').innerHTML = "⏸ HOLD (H)";
+            document.querySelectorAll('.tally-btn').forEach(b => b.classList.remove('live', 'preview'));
+        }
+
+        socket.on('status', (data) => { if (!data.msg.includes('LIVE') && !data.msg.includes('ARMED')) resetLiveUI(); });
+
+        let manualLiveSceneSync = "";
+        socket.on('live_cut', (data) => { manualLiveSceneSync = data.scene; });
+
+        socket.on('timecode', (data) => {
+            currentLiveTime = data.time; const currentMs = data.time * 1000;
+            const m = Math.floor(data.time / 60).toString().padStart(2, '0');
+            const s = Math.floor(data.time % 60).toString().padStart(2, '0');
+            const ms = Math.floor((data.time % 1) * 10).toString();
+            document.getElementById('status-bar').innerText = `${m}:${s}.${ms}`;
+            
+            try { timeline.setCustomTime(new Date(currentMs), 'cursor'); } catch(e) {}
+            
+            updateActiveRundownRow(currentLiveTime);
+
+            if (isPlaying) {
+                const range = timeline.getWindow(); const windowWidth = range.end.valueOf() - range.start.valueOf();
+                if (currentMs > range.start.valueOf() + (windowWidth * 0.8)) timeline.setWindow(range.start.valueOf() + (windowWidth * 0.5), range.end.valueOf() + (windowWidth * 0.5), {animation: true});
+                
+                let sorted = items.get({ order: function(a,b) { return (a.start||new Date(0)) - (b.start||new Date(0)); } });
+                let currentGlobalClip = sorted.find(c => {
+                    if (c.itemType === 'marker' || c.itemType === 'webhook' || !c.start || !c.end) return false;
+                    return currentLiveTime >= c.start.getTime() / 1000 && currentLiveTime < c.end.getTime() / 1000;
+                });
+                let nextGlobalClip = sorted.find(c => {
+                    if (c.itemType === 'marker' || c.itemType === 'webhook' || !c.start) return false;
+                    return currentLiveTime < c.start.getTime() / 1000;
+                });
+                const mode = document.getElementById('live-mode-select').value;
+
+                availableScenes.forEach((scene, i) => {
+                    const btn = document.getElementById(`tally-btn-${i}`);
+                    if(!btn) return;
+                    btn.classList.remove('live', 'preview');
+                    if (mode === 'override' || mode === 'record') {
+                        if (manualLiveSceneSync === scene) btn.classList.add('live');
+                    } else {
+                        if (currentGlobalClip && currentGlobalClip.scene === scene) btn.classList.add('live');
+                        else if (nextGlobalClip && nextGlobalClip.scene === scene) btn.classList.add('preview');
+                    }
+                });
+            }
+        });
+
+        function armShow() {
+            if(!isUiLocked) toggleLock();
+            isArmed = true;
+            document.getElementById('btn-arm-show').style.display = 'none';
+            document.getElementById('btn-fire-show').style.display = 'flex';
+            const display = document.getElementById('master-status-display');
+            if(display) display.classList.add('active-armed');
+            document.getElementById('status-bar').innerText = "ARMED...";
+            document.getElementById('status-bar').style.color = "#ff9900";
+            
+            try { timeline.setCustomTime(new Date(0), 'cursor'); } catch(e) {}
+            timeline.setWindow(-2000, 60000, {animation: true});
+        }
+
+        function fireShow() { 
+            if (!isArmed) return;
+            try {
+                const rundownData = getRawData();
+                isArmed = false; isPlaying = true; 
+                const btnFire = document.getElementById('btn-fire-show');
+                btnFire.innerHTML = "🔴 ON AIR"; btnFire.classList.add('pulsing-live');
+                const display = document.getElementById('master-status-display');
+                if(display) { display.classList.remove('active-armed'); display.classList.add('active-live'); }
+                document.getElementById('status-bar').style.color = "#ff3b30";
+                const mode = document.getElementById('live-mode-select').value;
+                const audioSource = document.getElementById('obs-audio-source').value;
+                const autoRecord = document.getElementById('obs-auto-record').checked;
+                
+                socket.emit('start_show', { rundown: rundownData, mode: mode, obs_audio_source: audioSource, auto_record: autoRecord }); 
+                resetForm(); 
+                lastRecordedItemId = null;
+            } catch (error) {
+                console.error(error);
+                alert("Errore interno durante la lettura della timeline. Controlla i dati.");
+                resetLiveUI();
+            }
+        }
+        
+        function stopShow() { 
+            socket.emit('stop_show'); 
+            resetLiveUI(); 
+            try { timeline.setCustomTime(new Date(0), 'cursor'); } catch(e) {} 
+            const range = timeline.getWindow(); const width = range.end.valueOf() - range.start.valueOf(); 
+            timeline.setWindow(-2000, -2000 + width, {animation: true});
+        }
+        
+        function nudgeTime(amount) { if (!isPlaying) return; socket.emit('nudge_time', { amount: amount }); }
+        function toggleHold() { if (!isPlaying) return; socket.emit('toggle_hold'); }
+        
+        socket.on('hold_state', (data) => {
+            const holdBtn = document.getElementById('btn-hold');
+            if (data.held) { holdBtn.classList.add('active'); holdBtn.innerHTML = "▶ RESUME"; document.getElementById('status-bar').style.color = "#ff9900"; } 
+            else { holdBtn.classList.remove('active'); holdBtn.innerHTML = "⏸ HOLD (H)"; document.getElementById('status-bar').style.color = "#ff3b30"; }
+        });
+    </script>
+</body>
+</html>
