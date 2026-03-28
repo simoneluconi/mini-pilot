@@ -4,9 +4,9 @@
 
 Mini-Pilot Studio is a powerful, web-based control room designed to automate and manage live broadcasts, talk shows, and events. It transforms your browser into a fully-fledged Director Station with a Non-Linear Timeline Editor (NLE), automating OBS scene switches, triggering external devices via Webhooks, and providing real-time cues for your crew.
 
-![Timeline](demo/timeline.gif.gif)
+![Timeline](demo/timeline.gif)
 
-![Tally](demo/tally.gif.gif)
+![Tally](demo/tally.gif)
 
 ---
 
