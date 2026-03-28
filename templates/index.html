@@ -121,10 +121,10 @@
 
         /* Blocco 3: Tally Matrix */
         .strip-matrix { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column;}
-        .tally-matrix { display: flex; flex-wrap: wrap; gap: 8px; overflow-y: auto; align-content: flex-start; flex: 1; padding-right: 5px;}
+        .tally-matrix { display: flex; flex-wrap: wrap; gap: 10px; overflow-y: auto; align-content: flex-start; flex: 1; padding-right: 5px;}
         .tally-matrix::-webkit-scrollbar { width: 6px; }
         .tally-matrix::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
-        .tally-btn { background: #111; border: 2px solid #333; color: #aaa; padding: 10px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; text-align: center; text-transform: uppercase; font-size: 13px; flex: 0 0 auto; width: 110px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+        .tally-btn { background: #111; border: 2px solid #333; color: #aaa; padding: 10px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; text-align: center; text-transform: uppercase; font-size: 13px; flex: 0 0 auto; width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
         .tally-btn:hover { background: #222; border-color: #555; color: white;}
         .tally-btn.live { background: rgba(255,69,58,0.15); border-color: var(--danger-color); color: var(--danger-color); box-shadow: 0 0 10px rgba(255,69,58,0.3);}
         .tally-btn.preview { background: rgba(48,209,88,0.15); border-color: var(--success-color); color: var(--success-color); box-shadow: 0 0 10px rgba(48,209,88,0.3);}
@@ -162,7 +162,7 @@
         .vis-item.vis-selected {
             box-shadow: 0 0 0 2px white inset, 0 0 15px rgba(255, 255, 255, 0.6) !important;
             z-index: 15 !important;
-            overflow: visible; /* permette ai bordi di non essere tagliati */
+            overflow: visible; 
         }
         
         .vis-item.vis-selected .vis-drag-left, 
@@ -340,7 +340,6 @@
         </div>
     </div>
 
-    <!-- CONSOLE CENTRALE RIPARATA E CHIUSA CORRETTAMENTE -->
     <div class="live-control-strip">
         <div class="strip-section strip-setup">
             <div class="input-label" style="color: var(--danger-color);">🔴 SYNC SETUP</div>
@@ -386,8 +385,7 @@
         <div class="strip-section strip-matrix">
             <div class="input-label">🎛️ QUICK CUTS (MULTIVIEW)</div>
             <div id="tally-matrix" class="tally-matrix">
-                <!-- Popolato via JS -->
-            </div>
+                </div>
         </div>
 
         <div class="strip-divider"></div>
@@ -404,7 +402,6 @@
         </div>
     </div>
 
-    <!-- BOTTOM WORKSPACE -->
     <div class="workspace-bottom">
         <div class="timeline-header">
             <div class="timeline-title">CUE TIMELINE</div>
@@ -417,7 +414,6 @@
         <div id="timeline"></div>
     </div>
 
-    <!-- MODAL IMPOSTAZIONI OBS -->
     <div id="settings-modal" class="modal">
         <div class="modal-content">
             <h3 style="margin-top: 0; color: white; border-bottom: 1px solid #333; padding-bottom: 10px;">⚙️ OBS Connection Settings</h3>
@@ -520,9 +516,15 @@
         const container = document.getElementById('timeline');
         const options = { 
             height: '100%',
-            start: new Date(-2000), /* FIX: Inizia la vista prima dello zero per lasciare libera la maniglia sinistra! */
+            start: new Date(-2000),
             end: new Date(60000), 
-            editable: true, 
+            editable: {
+                add: false,
+                updateTime: true,
+                updateGroup: false, /* FIX: Impedisce spostamento verticale traccia */
+                remove: true,
+                overrideItems: false
+            }, 
             format: { minorLabels: { millisecond:'SSS', second: 's', minute: 'm:ss' }, majorLabels: { second: 'm:ss' } }, 
             showCurrentTime: false, 
             margin: { item: { horizontal: 0, vertical: 4 }, axis: 4 },
@@ -699,9 +701,19 @@
         function toggleLock() {
             isUiLocked = !isUiLocked;
             const btn = document.getElementById('btn-lock');
-            timeline.setOptions({ editable: !isUiLocked });
-            if (isUiLocked) { btn.innerHTML = "🔒 Locked"; btn.classList.add('locked'); } 
-            else { btn.innerHTML = "🔓 Unlocked"; btn.classList.remove('locked'); }
+            
+            if (isUiLocked) { 
+                timeline.setOptions({ editable: false });
+                btn.innerHTML = "🔒 Locked"; 
+                btn.classList.add('locked'); 
+            } else { 
+                /* FIX: Ripristina i parametri sicuri quando si sblocca */
+                timeline.setOptions({ 
+                    editable: { updateTime: true, updateGroup: false, remove: true } 
+                });
+                btn.innerHTML = "🔓 Unlocked"; 
+                btn.classList.remove('locked'); 
+            }
         }
 
         function openSettings() { document.getElementById('settings-modal').style.display = 'flex'; socket.emit('req_obs_status'); }
@@ -764,7 +776,7 @@
 
         function resetForm() {
             editingId = null; 
-            document.getElementById('item-type').value = 'shot'; toggleItemType();
+            /* FIX: NON resetta il tipo di traccia per facilitare l'inserimento rapido */
             document.getElementById('item-duration').value = 5000;
             document.getElementById('clip-note').value = ""; document.getElementById('clip-movement').value = "";
             document.getElementById('marker-text').value = "";
@@ -972,7 +984,6 @@
                     method: item.method || "POST",
                     url: item.url || "",
                     payload: item.payload || "",
-                    shotNumber: item.shotNumber || 0,
                     start: startTime, 
                     end: endTime 
                 };
@@ -1026,8 +1037,8 @@
                     };
                 } else {
                     const color = item.color || sceneColors[item.scene] || "#007aff"; 
-                    const displayContent = createDisplayContent(item.scene, item.note, item.transition, item.transition_duration, item.movement, item.shotNumber || i+1); 
-                    return { id: i, group: 'shots', itemType: 'shot', content: displayContent, scene: item.scene, note: item.note, transition: item.transition, transition_duration: item.transition_duration, movement: item.movement, shotNumber: item.shotNumber || i+1, color: color, style: `background-color: ${color}; border-color: ${color};`, start: new Date(item.start * 1000), end: new Date(item.end * 1000) }; 
+                    const displayContent = createDisplayContent(item.scene, item.note, item.transition, item.transition_duration, item.movement, i+1); 
+                    return { id: i, group: 'shots', itemType: 'shot', content: displayContent, scene: item.scene, note: item.note, transition: item.transition, transition_duration: item.transition_duration, movement: item.movement, shotNumber: i+1, color: color, style: `background-color: ${color}; border-color: ${color};`, start: new Date(item.start * 1000), end: new Date(item.end * 1000) }; 
                 }
             }); 
             items.add(timelineData); 
@@ -1137,7 +1148,7 @@
             resetLiveUI(); 
             try { timeline.setCustomTime(new Date(0), 'cursor'); } catch(e) {} 
             const range = timeline.getWindow(); const width = range.end.valueOf() - range.start.valueOf(); 
-            timeline.setWindow(-2000, -2000 + width, {animation: true});
+            timeline.setWindow(-2000, -2000 + width, {animation: true}); 
         }
         
         function nudgeTime(amount) { if (!isPlaying) return; socket.emit('nudge_time', { amount: amount }); }
