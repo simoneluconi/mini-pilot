@@ -5,45 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mini-Pilot | Talent Stage Display</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #000; color: white; margin: 0; padding: 0;
-            height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden;
-        }
-
-        /* HEADER FISSO */
-        .top-bar { display: flex; justify-content: space-between; align-items: center; padding: 30px 50px; flex-shrink: 0; }
-        .master-timecode { font-family: monospace; font-size: 60px; font-weight: bold; color: #ffcc00; }
-        .real-time-clock { font-family: monospace; font-size: 40px; font-weight: bold; color: #888; }
-
-        /* AREA GOBBO */
-        .center-area { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; text-align: center; }
-        .status-text { font-size: 60px; font-weight: 900; letter-spacing: 6px; margin-bottom: 20px; color: #444; text-transform: uppercase;}
-        .status-text.live { color: #ff3b30; text-shadow: 0 0 30px rgba(255,59,48,0.8); }
-
-        .lyrics-text { font-size: 110px; font-weight: 900; line-height: 1.2; text-shadow: 0 5px 20px rgba(0,0,0,1); margin: 0 5%;}
-        
-        /* FOOTER (Timer Inquadratura Corrente) */
-        .bottom-bar { background: #111; height: 120px; display: flex; align-items: center; justify-content: space-between; padding: 0 50px;}
-        .progress-container { flex-grow: 1; height: 30px; background: #222; border-radius: 15px; overflow: hidden; margin-right: 40px; border: 2px solid #444;}
-        .progress-bar { height: 100%; width: 0%; background: #007aff; transition: width 0.1s linear;}
-        .current-timer { font-family: monospace; font-size: 80px; font-weight: bold; line-height: 1;}
-
-        /* MESSAGGI URGENZA E AUDIO */
-        #urgent-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,0,0,0.95); z-index: 10000; display: none; flex-direction: column; align-items: center; justify-content: center; border: 20px solid white; box-sizing: border-box; animation: flashBg 0.5s infinite alternate; }
-        #urgent-text { font-size: 8vw; color: white; margin: 0; text-transform: uppercase; letter-spacing: 5px; text-shadow: 0 4px 15px rgba(0,0,0,0.8); text-align: center; padding: 20px;}
-        @keyframes flashBg { 0% { background: rgba(255,0,0,0.95); } 100% { background: rgba(200,0,0,0.95); } }
-
-        /* Setup Screen per abilitare Autoplay Audio */
-        #setup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
-        button.btn-primary { background: #007aff; color: white; cursor: pointer; font-weight: bold; transition: 0.2s; padding: 15px 30px; font-size: 22px; border-radius: 8px; border: none; outline: none; }
-        button.btn-primary:hover { background: #005bb5; }
-    </style>
+    <link rel="stylesheet" href="{{ asset_url('css/receiver-common.css') }}">
+    <link rel="stylesheet" href="{{ asset_url('css/talent.css') }}">
 </head>
 <body>
 
-    <!-- Setup Screen (Richiesto per sbloccare l'AudioContext su browser) -->
+    <!-- Setup screen (also required to unlock the AudioContext in the browser) -->
     <div id="setup">
         <h2 style="color: #888; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 30px;">Talent Stage Monitor</h2>
         <button class="btn-primary" onclick="enterStageMode()">Launch Display</button>
@@ -66,85 +33,7 @@
         <div class="current-timer" id="current-timer">--</div>
     </div>
 
-    <script>
-        const socket = io();
-        let rundown = [];
-        let isShowRunning = false;
-
-        const setupEl = document.getElementById('setup');
-        const masterTimecodeEl = document.getElementById('master-timecode');
-        const statusTextEl = document.getElementById('status-text');
-        const lyricsTextEl = document.getElementById('lyrics-text');
-        const progBarEl = document.getElementById('progress-bar');
-        const currentTimerEl = document.getElementById('current-timer');
-        const realTimeClockEl = document.getElementById('real-time-clock');
-
-        setInterval(() => { const now = new Date(); realTimeClockEl.innerText = now.toLocaleTimeString('it-IT', { hour12: false }); }, 1000);
-
-        function enterStageMode() {
-            setupEl.style.display = 'none';
-        }
-
-        // --- RICEZIONE INTERCOM AUDIO ---
-        socket.on('audio_broadcast', (data) => {
-            try {
-                // Ricostruiamo il blob dai dati binari per suonarlo via WebAudio o HTMLAudioElement
-                const blob = new Blob([data.audio], { type: data.type });
-                const url = URL.createObjectURL(blob);
-                const audioObj = new Audio(url);
-                audioObj.play();
-            } catch (err) {
-                console.error("Audio playback error:", err);
-            }
-        });
-
-        let urgentTimeout;
-        socket.on('urgent_message', (data) => {
-            document.getElementById('urgent-text').innerText = data.msg;
-            document.getElementById('urgent-overlay').style.display = 'flex';
-            clearTimeout(urgentTimeout);
-            urgentTimeout = setTimeout(() => { document.getElementById('urgent-overlay').style.display = 'none'; }, 6000);
-        });
-
-        socket.on('rundown_updated', (data) => { rundown = data.sort((a, b) => a.start - b.start); });
-        socket.on('show_started', () => { isShowRunning = true; statusTextEl.innerText = "ON AIR"; statusTextEl.classList.add('live'); });
-
-        function formatTimecode(seconds) { const m = Math.floor(seconds / 60).toString().padStart(2, '0'); const s = Math.floor(seconds % 60).toString().padStart(2, '0'); const ms = Math.floor((seconds % 1) * 10).toString(); return `${m}:${s}.${ms}`; }
-
-        socket.on('timecode', (data) => {
-            const currentTime = data.time;
-            masterTimecodeEl.innerText = formatTimecode(currentTime);
-
-            // ORA IL GOBBO LEGGE DIRETTAMENTE I MARKER INVECE DEI TITOLI SCENA!
-            let currentMarker = rundown.find(c => c.type === 'marker' && currentTime >= c.start && currentTime < c.end);
-            
-            if (currentMarker && currentMarker.text) {
-                lyricsTextEl.innerText = currentMarker.text;
-
-                const timeLeft = Math.max(0, currentMarker.end - currentTime);
-                const duration = currentMarker.end - currentMarker.start;
-                let percentage = (timeLeft / duration) * 100;
-                
-                progBarEl.style.width = Math.max(0, Math.min(100, percentage)) + "%";
-                currentTimerEl.innerText = timeLeft.toFixed(1);
-            } else {
-                lyricsTextEl.innerHTML = `<span style="color:#555;">(Instrumental)</span>`;
-                progBarEl.style.width = "0%";
-                currentTimerEl.innerText = "--";
-            }
-        });
-
-        socket.on('status', (data) => {
-            if (!data.msg.includes('LIVE') && !data.msg.includes('ARMED')) {
-                isShowRunning = false;
-                statusTextEl.innerText = "STANDBY";
-                statusTextEl.classList.remove('live');
-                masterTimecodeEl.innerText = "00:00.0";
-                lyricsTextEl.innerHTML = `...`;
-                progBarEl.style.width = "0%";
-                currentTimerEl.innerText = "--";
-            }
-        });
-    </script>
+    <script src="{{ asset_url('js/receiver-common.js') }}"></script>
+    <script src="{{ asset_url('js/talent.js') }}"></script>
 </body>
 </html>
