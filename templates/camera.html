@@ -5,85 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mini-Pilot | Camera Tally</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #000; color: white; margin: 0; padding: 0; height: 100vh; box-sizing: border-box; border: 15px solid #111; transition: border-color 0.2s ease; display: flex; flex-direction: column; overflow: hidden; position: relative; }
-        body.live { border-color: #ff3b30; } body.preview { border-color: #34c759; } body.preview-blink { border-color: #ffcc00; }
-        #flash-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 9999; opacity: 0; pointer-events: none; transition: opacity 0.15s ease-out; }
-        #flash-overlay.flash { opacity: 0.8; transition: none; }
-        
-        .grid-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; display: none; }
-        .grid-overlay.active { display: block; }
-        .grid-rule-thirds { position: absolute; width: 100%; height: 100%; background: linear-gradient(to right, transparent 33.33%, rgba(255,255,255,0.3) 33.33%, rgba(255,255,255,0.3) 33.43%, transparent 33.43%, transparent 66.66%, rgba(255,255,255,0.3) 66.66%, rgba(255,255,255,0.3) 66.76%, transparent 66.76%), linear-gradient(to bottom, transparent 33.33%, rgba(255,255,255,0.3) 33.33%, rgba(255,255,255,0.3) 33.43%, transparent 33.43%, transparent 66.66%, rgba(255,255,255,0.3) 66.66%, rgba(255,255,255,0.3) 66.76%, transparent 66.76%); }
-        .grid-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; }
-        .grid-crosshair::before { content: ''; position: absolute; top: 50%; left: -10px; right: -10px; height: 2px; background: rgba(255,255,255,0.6); transform: translateY(-50%); }
-        .grid-crosshair::after { content: ''; position: absolute; left: 50%; top: -10px; bottom: -10px; width: 2px; background: rgba(255,255,255,0.6); transform: translateX(-50%); }
-        
-        /* INTERCOM MESSAGES OVERLAY */
-        #urgent-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,0,0,0.95); z-index: 10000; display: none; flex-direction: column; align-items: center; justify-content: center; border: 20px solid white; box-sizing: border-box; animation: flashBg 0.5s infinite alternate; }
-        #urgent-text { font-size: 8vw; color: white; margin: 0; text-transform: uppercase; letter-spacing: 5px; text-shadow: 0 4px 15px rgba(0,0,0,0.8); text-align: center; padding: 20px;}
-        @keyframes flashBg { 0% { background: rgba(255,0,0,0.95); } 100% { background: rgba(200,0,0,0.95); } }
-
-        #offline-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10000; display: none; flex-direction: column; align-items: center; justify-content: center; border: 20px solid #ff3b30; box-sizing: border-box; animation: offlineBlink 1s infinite alternate; }
-        #offline-overlay h1 { font-size: 80px; color: #ff3b30; margin: 0; text-transform: uppercase; letter-spacing: 5px;}
-        #offline-overlay p { font-size: 30px; color: white; margin-top: 20px; }
-        @keyframes offlineBlink { 0% { border-color: #ff3b30; } 100% { border-color: #550000; } }
-
-        #setup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
-        select, button { padding: 15px 30px; font-size: 22px; margin: 10px; border-radius: 8px; border: none; outline: none; }
-        button.btn-primary { background: #007aff; color: white; cursor: pointer; font-weight: bold; transition: 0.2s;}
-        button.btn-primary:hover { background: #005bb5; }
-        
-        #viewfinder { display: none; flex-grow: 1; flex-direction: column; overflow: hidden; position: relative; z-index: 10;}
-        .top-bar { display: flex; justify-content: space-between; align-items: center; padding: 20px 30px; flex-shrink: 0; z-index: 60; }
-        .cam-badge { background: rgba(255,255,255,0.1); border: 2px solid #555; padding: 10px 20px; border-radius: 12px; font-size: 24px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; }
-        body.live .cam-badge { background: rgba(255,59,48,0.2); border-color: #ff3b30; color: #ff3b30; }
-        body.preview .cam-badge { background: rgba(52,199,89,0.2); border-color: #34c759; color: #34c759; }
-        .master-timecode { font-family: monospace; font-size: 38px; font-weight: bold; color: #ffcc00; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
-        .top-right-controls { display: flex; align-items: center; gap: 15px; }
-        .real-time-clock { font-family: monospace; font-size: 24px; font-weight: bold; color: #888; background: #222; padding: 8px 15px; border-radius: 8px; border: 1px solid #444;}
-        .btn-grid { background: rgba(255,255,255,0.1); border: 1px solid #555; color: white; padding: 8px 15px; border-radius: 8px; font-size: 20px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center;}
-        .btn-grid:hover, .btn-grid.active { background: rgba(255,255,255,0.3); border-color: white;}
-
-        .center-area { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px 20px; text-align: center; overflow-y: auto; z-index: 60; }
-        .status-text { font-size: 50px; font-weight: 900; letter-spacing: 6px; margin-bottom: 5px; color: #444; }
-        body.live .status-text { color: #ff3b30; text-shadow: 0 0 20px rgba(255,59,48,0.5); }
-        body.preview .status-text { color: #34c759; }
-        .main-timer { font-size: 180px; font-family: monospace; font-weight: bold; line-height: 1; margin-bottom: 15px; transition: color 0.1s;}
-        body.live .main-timer { color: white; } body.preview .main-timer { color: white; } body.preview-blink .main-timer { color: #ffcc00; }
-        
-        @keyframes timerFlash { 0%, 100% { color: #ff3b30; opacity: 1; } 50% { color: white; opacity: 0.5; } }
-        .main-timer.warning-end { animation: timerFlash 0.5s infinite; }
-
-        .lyrics-track { width: 90%; max-width: 1000px; background: rgba(255, 255, 255, 0.1); border-left: 5px solid #007aff; border-right: 5px solid #007aff; padding: 15px 30px; border-radius: 12px; font-size: 32px; font-weight: 600; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,0.8); margin-bottom: 20px; display: none; align-items: center; justify-content: center; min-height: 50px; text-align: center; }
-        .progress-container { width: 80%; max-width: 800px; height: 15px; background: #222; border-radius: 10px; border: 2px solid #444; margin-bottom: 25px; overflow: hidden; display: none; flex-shrink: 0; }
-        .progress-bar { height: 100%; width: 100%; background: #ff3b30; transition: width 0.1s linear, background-color 0.2s; }
-        .metadata-box { background: rgba(20,20,20,0.9); border: 3px solid #333; border-radius: 16px; padding: 20px 30px; width: 80%; max-width: 800px; display: none; flex-direction: column; gap: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); box-sizing: border-box; }
-        .metadata-box.visible { display: flex; }
-        .shot-header { display: flex; justify-content: space-between; align-items: center; }
-        .shot-number { font-size: 40px; color: #007aff; font-weight: 900; }
-        .shot-total { font-size: 24px; color: #888; font-weight: bold; margin-left: 10px;}
-        .shot-movement { font-size: 28px; color: #fff; font-weight: bold; background: #333; padding: 6px 16px; border-radius: 10px;}
-        .shot-note { font-size: 32px; color: #ffcc00; font-style: italic; font-weight: bold; border-top: 2px solid #444; padding-top: 15px; text-align: left; line-height: 1.3; }
-        .next-action-box { background: rgba(52, 199, 89, 0.15); border: 2px solid #34c759; border-radius: 10px; padding: 10px 15px; margin-top: 15px; display: none; justify-content: space-between; align-items: center; }
-        .next-action-label { color: #34c759; font-weight: bold; font-size: 16px; text-transform: uppercase; letter-spacing: 1px;}
-        .next-action-details { color: #fff; font-size: 20px; font-weight: bold; }
-        .compact-footer { background: #111; border-top: 1px solid #333; padding: 10px 20px; display: flex; align-items: center; height: 50px; box-sizing: border-box; width: 100%; flex-shrink: 0; z-index: 60; }
-        .upcoming-label { font-weight: bold; color: #666; margin-right: 15px; font-size: 14px; letter-spacing: 1px; }
-        .upcoming-list { display: flex; overflow-x: auto; white-space: nowrap; gap: 10px; scrollbar-width: none; }
-        .upcoming-list::-webkit-scrollbar { display: none; }
-        .upcoming-item { background: #222; border: 1px solid #444; padding: 4px 10px; border-radius: 6px; font-size: 14px; color: #ddd; display: flex; align-items: center; gap: 8px; }
-        .upcoming-time { color: #ffcc00; font-family: monospace; font-weight: bold; background: #000; padding: 2px 6px; border-radius: 4px;}
-
-        @media (max-width: 768px), (max-height: 600px) {
-            body { border-width: 8px; } .top-bar { padding: 10px 15px; } .cam-badge { font-size: 16px; padding: 6px 12px; border-radius: 8px; } .master-timecode { font-size: 20px; } .real-time-clock { font-size: 14px; padding: 4px 8px; } .btn-grid { font-size: 14px; padding: 6px 10px; }
-            .status-text { font-size: 28px; margin-bottom: 0; } .main-timer { font-size: 25vw; margin-bottom: 10px; }
-            .lyrics-track { font-size: 18px; padding: 10px 15px; margin-bottom: 10px; min-height: 30px; width: 95%; box-sizing: border-box;}
-            .progress-container { margin-bottom: 15px; height: 10px; width: 95%; }
-            .metadata-box { padding: 15px 20px; width: 95%; gap: 10px; } .shot-number { font-size: 24px; } .shot-total { font-size: 16px; } .shot-movement { font-size: 16px; padding: 4px 10px; } .shot-note { font-size: 18px; padding-top: 10px; }
-            .next-action-box { flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px 12px; margin-top: 10px; } .next-action-label { font-size: 12px; } .next-action-details { font-size: 16px; white-space: normal; }
-            .compact-footer { padding: 5px 10px; height: 40px; } .upcoming-label { font-size: 11px; margin-right: 10px; } .upcoming-item { font-size: 12px; padding: 3px 8px; } .upcoming-time { font-size: 11px; padding: 2px 4px; }
-        }
-    </style>
+    <link rel="stylesheet" href="{{ asset_url('css/receiver-common.css') }}">
+    <link rel="stylesheet" href="{{ asset_url('css/camera.css') }}">
 </head>
 <body>
 
@@ -94,7 +17,7 @@
     <div id="urgent-overlay"><h1 id="urgent-text">MESSAGE</h1></div>
 
     <div id="flash-overlay"></div>
-    <div id="grid-overlay" class="grid-overlay"><div class="grid-rule-thirds"></div><div class="grid-crosshair"></div></div>
+    <div id="dir-preview-badge">⚠️ PREVIEW — GET READY</div>
 
     <div id="setup">
         <h2 style="color: #888; text-transform: uppercase; letter-spacing: 2px;">Assign Camera</h2>
@@ -108,7 +31,6 @@
             <div class="master-timecode" id="master-timecode">00:00.0</div>
             <div class="top-right-controls">
                 <div class="real-time-clock" id="real-time-clock">00:00:00</div>
-                <button class="btn-grid" id="btn-grid" onclick="toggleGrid()" title="Toggle Viewfinder Guides">⌖</button>
             </div>
         </div>
 
@@ -137,127 +59,7 @@
         </div>
     </div>
 
-    <script>
-        const socket = io();
-        let myScene = ""; let rundown = []; let currentMode = "playback"; let manualLiveScene = ""; let isShowRunning = false; let wasLivePreviously = false; 
-
-        const body = document.body;
-        const offlineOverlay = document.getElementById('offline-overlay'); const flashOverlay = document.getElementById('flash-overlay'); const gridOverlay = document.getElementById('grid-overlay'); const btnGrid = document.getElementById('btn-grid'); const masterTimecodeEl = document.getElementById('master-timecode'); const statusTextEl = document.getElementById('status-text'); const mainTimerEl = document.getElementById('main-timer'); const lyricsTrackEl = document.getElementById('lyrics-track'); const progContainerEl = document.getElementById('progress-container'); const progBarEl = document.getElementById('progress-bar'); const metadataBox = document.getElementById('metadata-box'); const shotNumberEl = document.getElementById('shot-number'); const shotTotalEl = document.getElementById('shot-total'); const shotMovementEl = document.getElementById('shot-movement'); const shotNoteEl = document.getElementById('shot-note'); const nextActionBox = document.getElementById('next-action-box'); const nextActionDetails = document.getElementById('next-action-details'); const upcomingListEl = document.getElementById('upcoming-list'); const realTimeClockEl = document.getElementById('real-time-clock');
-
-        // --- RICEZIONE INTERCOM AUDIO ---
-        socket.on('audio_broadcast', (data) => {
-            try {
-                const blob = new Blob([data.audio], { type: data.type });
-                const url = URL.createObjectURL(blob);
-                const audioObj = new Audio(url);
-                audioObj.play();
-            } catch (err) {
-                console.error("Audio playback error:", err);
-            }
-        });
-
-        // INTERCOM
-        let urgentTimeout;
-        socket.on('urgent_message', (data) => {
-            document.getElementById('urgent-text').innerText = data.msg;
-            document.getElementById('urgent-overlay').style.display = 'flex';
-            clearTimeout(urgentTimeout);
-            urgentTimeout = setTimeout(() => { document.getElementById('urgent-overlay').style.display = 'none'; }, 6000);
-        });
-
-        socket.on('disconnect', () => { offlineOverlay.style.display = 'flex'; });
-        socket.on('connect', () => { offlineOverlay.style.display = 'none'; if(myScene) socket.emit('get_status_sync'); });
-
-        function toggleGrid() { gridOverlay.classList.toggle('active'); btnGrid.classList.toggle('active'); }
-        setInterval(() => { const now = new Date(); realTimeClockEl.innerText = now.toLocaleTimeString('it-IT', { hour12: false }); }, 1000);
-
-        function enterCameraMode() {
-            myScene = document.getElementById('my-camera').value;
-            document.getElementById('cam-badge').innerText = "CAM: " + myScene;
-            document.getElementById('setup').style.display = 'none';
-            document.getElementById('viewfinder').style.display = 'flex';
-            socket.emit('get_status_sync');
-        }
-
-        socket.on('rundown_updated', (data) => { rundown = data.sort((a, b) => a.start - b.start); });
-        socket.on('show_started', (data) => { currentMode = data.mode; manualLiveScene = ""; isShowRunning = true; lyricsTrackEl.style.display = 'flex'; });
-        socket.on('mode_changed', (data) => { currentMode = data.mode; if (currentMode === 'playback') manualLiveScene = ""; });
-        socket.on('live_cut', (data) => { manualLiveScene = data.scene; });
-
-        function formatTimecode(seconds) { const m = Math.floor(seconds / 60).toString().padStart(2, '0'); const s = Math.floor(seconds % 60).toString().padStart(2, '0'); const ms = Math.floor((seconds % 1) * 10).toString(); return `${m}:${s}.${ms}`; }
-
-        function setStandby() {
-            body.className = ''; statusTextEl.innerText = "STANDBY"; mainTimerEl.innerText = "--"; mainTimerEl.style.color = "#444"; mainTimerEl.classList.remove('warning-end'); progContainerEl.style.display = 'none'; metadataBox.classList.remove('visible'); nextActionBox.style.display = 'none'; wasLivePreviously = false;
-            if (!isShowRunning) { lyricsTrackEl.style.display = 'none'; }
-            upcomingListEl.innerHTML = `<span style="color: #555; font-style: italic;">Standby</span>`;
-        }
-
-        function triggerCutFlash() { flashOverlay.classList.add('flash'); setTimeout(() => { flashOverlay.classList.remove('flash'); }, 50); }
-
-        socket.on('timecode', (data) => {
-            const currentTime = data.time; masterTimecodeEl.innerText = formatTimecode(currentTime);
-            const totalShotsCount = rundown.filter(c => c.type !== 'marker').length;
-
-            // ORA TROVIAMO I TESTI DALLA TRACCIA MARKER!
-            let currentMarker = rundown.find(c => c.type === 'marker' && currentTime >= c.start && currentTime < c.end);
-            if (currentMarker && currentMarker.text) lyricsTrackEl.innerHTML = `<span>${currentMarker.text}</span>`;
-            else lyricsTrackEl.innerHTML = `<span style="color: #888; font-style: italic;">🎵 Instrumental / Intro...</span>`;
-
-            if (currentMode === 'override' || currentMode === 'record') {
-                upcomingListEl.innerHTML = `<span style="color: #ffcc00; font-style: italic;">Director is cutting manually</span>`;
-                if (myScene === manualLiveScene) {
-                    if(!wasLivePreviously) triggerCutFlash();
-                    wasLivePreviously = true; body.className = 'live'; statusTextEl.innerText = "ON AIR"; mainTimerEl.innerText = "LIVE"; mainTimerEl.style.color = "white"; mainTimerEl.classList.remove('warning-end'); progContainerEl.style.display = 'none'; nextActionBox.style.display = 'none'; shotNumberEl.innerText = "MANUAL CUT"; shotTotalEl.innerText = ""; shotMovementEl.style.display = "none"; shotNoteEl.innerText = "Director took manual control"; metadataBox.classList.add('visible');
-                } else { setStandby(); }
-                return;
-            }
-
-            let isLive = false; let currentLiveShot = null; let nextShot = null; let futureShotsQueue = [];
-            for (let clip of rundown) {
-                if (clip.type === 'marker') continue; // IGNORA I MARKER NEL CALCOLO DELLE CAMERE
-                if (clip.scene === myScene) {
-                    if (currentTime >= clip.start && currentTime < clip.end) { isLive = true; currentLiveShot = clip; } 
-                    else if (currentTime < clip.start) { if (!nextShot) nextShot = clip; futureShotsQueue.push(clip); }
-                }
-            }
-
-            if (futureShotsQueue.length > 0) { upcomingListEl.innerHTML = futureShotsQueue.map(clip => `<div class="upcoming-item"><span class="upcoming-time">${formatTimecode(clip.start).slice(0,5)}</span> Shot #${clip.shotNumber || '?'}</div>`).join(''); } 
-            else { upcomingListEl.innerHTML = `<span style="color: #555; font-style: italic;">No more scheduled shots</span>`; }
-
-            if (isLive) {
-                if(!wasLivePreviously) triggerCutFlash();
-                wasLivePreviously = true; body.className = 'live'; statusTextEl.innerText = "ON AIR"; progContainerEl.style.display = 'block';
-                const timeLeft = Math.max(0, currentLiveShot.end - currentTime); mainTimerEl.innerText = timeLeft.toFixed(1);
-                
-                if (timeLeft <= 3.0 && timeLeft > 0.1) { mainTimerEl.classList.add('warning-end'); } 
-                else { mainTimerEl.classList.remove('warning-end'); mainTimerEl.style.color = "white"; }
-
-                const duration = currentLiveShot.end - currentLiveShot.start; let percentage = (timeLeft / duration) * 100; percentage = Math.max(0, Math.min(100, percentage)); progBarEl.style.width = percentage + "%"; progBarEl.style.background = "#ff3b30";
-                shotNumberEl.innerText = `SHOT #${currentLiveShot.shotNumber || '?'}`; shotTotalEl.innerText = `/ ${totalShotsCount}`; shotMovementEl.innerText = currentLiveShot.movement || "Static 🛑"; shotMovementEl.style.display = "block";
-                
-                if(currentLiveShot.note) { shotNoteEl.style.display = "block"; shotNoteEl.innerText = currentLiveShot.note; } 
-                else { shotNoteEl.style.display = "none"; }
-                
-                if (nextShot) { nextActionBox.style.display = 'flex'; nextActionDetails.innerText = `Shot #${nextShot.shotNumber || '?'} - ${nextShot.movement || "Static 🛑"}`; } 
-                else { nextActionBox.style.display = 'none'; }
-                metadataBox.classList.add('visible');
-
-            } else if (nextShot) {
-                wasLivePreviously = false; mainTimerEl.classList.remove('warning-end'); const timeLeft = nextShot.start - currentTime; progContainerEl.style.display = 'block'; nextActionBox.style.display = 'none';
-                let countdownWindow = 15; let percentage = (timeLeft / countdownWindow) * 100; percentage = Math.max(0, Math.min(100, percentage)); progBarEl.style.width = percentage + "%";
-
-                if (timeLeft <= 3.0) { const blink = Math.floor(currentTime * 4) % 2 === 0; body.className = blink ? 'preview preview-blink' : 'preview'; statusTextEl.innerText = "GET READY!"; progBarEl.style.background = "#ffcc00"; } 
-                else { body.className = 'preview'; statusTextEl.innerText = "PREVIEW"; progBarEl.style.background = "#34c759"; }
-
-                mainTimerEl.innerText = timeLeft.toFixed(1); mainTimerEl.style.color = "white";
-                shotNumberEl.innerText = `NEXT: SHOT #${nextShot.shotNumber || '?'}`; shotTotalEl.innerText = `/ ${totalShotsCount}`; shotMovementEl.innerText = nextShot.movement || "Static 🛑"; shotMovementEl.style.display = "block";
-                
-                if(nextShot.note) { shotNoteEl.style.display = "block"; shotNoteEl.innerText = nextShot.note; } else { shotNoteEl.style.display = "none"; }
-                metadataBox.classList.add('visible');
-            } else { setStandby(); }
-        });
-
-        socket.on('status', (data) => { if (!data.msg.includes('LIVE') && !data.msg.includes('ARMED')) { isShowRunning = false; setStandby(); masterTimecodeEl.innerText = "00:00.0"; }});
-    </script>
+    <script src="{{ asset_url('js/receiver-common.js') }}"></script>
+    <script src="{{ asset_url('js/camera.js') }}"></script>
 </body>
 </html>

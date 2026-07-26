@@ -1,3 +1,9 @@
+import sys
+# Force UTF-8 stdio so the emoji-laden log/print statements below don't crash
+# on Windows consoles that default to a legacy (non-UTF-8) codepage.
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 import time
 import json
 import os
@@ -5,14 +11,29 @@ import csv
 import io
 import urllib.request
 import urllib.parse
-from flask import Flask, render_template, request, jsonify, make_response
+from flask import Flask, render_template, request, jsonify, make_response, url_for
 from flask_socketio import SocketIO
 import obsws_python as obs
 import threading
 
 app = Flask(__name__)
-socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
+# 'threading' avoids the eventlet dependency (deprecated upstream) and its
+# monkey-patching/DNS quirks; this app doesn't need eventlet-scale concurrency.
+socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")
 triggered_webhooks = set()
+
+@app.context_processor
+def inject_asset_url():
+    # Appends the file's mtime as a ?v= query param so browsers don't keep
+    # serving a stale cached copy of static/css|js after we edit a file.
+    def asset_url(filename):
+        full_path = os.path.join(app.static_folder, filename)
+        try:
+            version = int(os.path.getmtime(full_path))
+        except OSError:
+            version = 0
+        return f"{url_for('static', filename=filename)}?v={version}"
+    return dict(asset_url=asset_url)
 
 OBS_CONFIG_FILE = "obs_config.json"
 obs_client = None
@@ -44,12 +65,15 @@ connect_obs()
 is_playing = False
 start_time = 0
 active_rundown = []
-show_mode = "playback" 
-force_timeline_update = False 
+show_mode = "playback"
+force_timeline_update = False
 
 time_offset = 0.0
 is_paused = False
 pause_timestamp = 0.0
+
+current_live_scene = None
+current_preview_scene = None
 
 COMPILATIONS_FILE = 'compilations.json'
 
@@ -59,21 +83,21 @@ def load_compilations():
             return json.load(f)
     return {}
 
-# --- FUNZIONE IOT PER LUCI TALLY FISICHE ---
+# --- IOT FUNCTION FOR PHYSICAL TALLY LIGHTS ---
 def trigger_physical_tally(scene_name):
     config = load_obs_config()
     webhook_url = config.get("webhook_url", "").strip()
     if webhook_url:
         try:
-            # Invia una chiamata POST al dispositivo IoT (es. ESP32, Raspberry)
+            # Send a POST request to the IoT device (e.g. ESP32, Raspberry)
             url = f"{webhook_url}?scene={urllib.parse.quote(scene_name)}"
             req = urllib.request.Request(url, method="POST")
             urllib.request.urlopen(req, timeout=0.5)
-            print(f"💡 Tally Hardware acceso per: {scene_name}")
+            print(f"💡 Tally hardware turned on for: {scene_name}")
         except Exception as e:
             print(f"⚠️ Webhook Tally Error: {e}")
 
-# --- ROUTING DELLE PAGINE ---
+# --- PAGE ROUTES ---
 @app.route('/')
 def index(): return render_template('index.html')
 
@@ -83,7 +107,7 @@ def camera_select(): return render_template('camera.html', scenes=get_obs_scenes
 @app.route('/talent')
 def talent_monitor(): return render_template('talent.html')
 
-# --- API E CSV EXPORT ---
+# --- API AND CSV EXPORT ---
 @app.route('/api/scenes')
 def api_scenes(): return jsonify(get_obs_scenes())
 
@@ -170,7 +194,7 @@ def handle_scenes_refresh():
 
 def run_show():
     global is_playing, start_time, active_rundown, show_mode, force_timeline_update
-    global time_offset, is_paused, pause_timestamp, triggered_webhooks
+    global time_offset, is_paused, pause_timestamp, triggered_webhooks, current_live_scene
     rundown = sorted(active_rundown, key=lambda x: x['start'])
     last_triggered_start = None
 
@@ -187,14 +211,14 @@ def run_show():
                 if elapsed >= item["start"]:
                     item_type = item.get("itemType", item.get("type", "shot"))
                     
-                    # Esecuzione Webhook
+                    # Execute webhook
                     if item_type == "webhook":
                         wh_id = f"{item['start']}_{item.get('url')}"
                         if wh_id not in triggered_webhooks:
                             triggered_webhooks.add(wh_id)
                             trigger_custom_webhook(item)
-                            
-                    # Aggiornamento Telecamera
+
+                    # Update camera
                     if item_type == "shot":
                         target_shot = item
                 else: break 
@@ -210,9 +234,10 @@ def run_show():
                             obs_client.set_current_scene_transition(t_name)
                             obs_client.set_current_scene_transition_duration(int(target_shot.get("transition_duration", 300)))
                         except: pass
-                    try: 
+                    try:
                         obs_client.set_current_program_scene(target_shot["scene"])
                         trigger_physical_tally(target_shot["scene"])
+                        current_live_scene = target_shot["scene"]
                     except: pass
 
         if show_mode == 'playback' and len(rundown) > 0 and not is_paused:
@@ -250,25 +275,28 @@ def trigger_custom_webhook(item):
 @socketio.on('start_show')
 def handle_start(data):
     global is_playing, start_time, active_rundown, show_mode, force_timeline_update, time_offset, is_paused, triggered_webhooks
+    global current_live_scene, current_preview_scene
     if not is_playing:
         active_rundown = data.get('rundown', [])
         show_mode = data.get('mode', 'playback')
         obs_audio_source = data.get('obs_audio_source', '').strip()
-        auto_record = data.get('auto_record', True) 
-        
+        auto_record = data.get('auto_record', True)
+
         force_timeline_update = True
         time_offset = 0.0
         is_paused = False
         triggered_webhooks = set()
+        current_live_scene = None
+        current_preview_scene = None
         socketio.emit('hold_state', {'held': False})
         
         if obs_client:
-            # 1. Avvia base musicale
+            # 1. Start the music bed
             if obs_audio_source:
                 try: obs_client.trigger_media_input_action(obs_audio_source, 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART')
                 except Exception as e: print(f"Audio Start Error: {e}")
-            
-            # 2. Avvia registrazione in sicurezza
+
+            # 2. Safely start recording
             if auto_record:
                 try: 
                     status = obs_client.get_record_status()
@@ -296,11 +324,13 @@ def handle_change_mode(data):
 
 @socketio.on('stop_show')
 def handle_stop():
-    global is_playing, is_paused
+    global is_playing, is_paused, current_live_scene, current_preview_scene
     is_playing = False
     is_paused = False
-    
-    # Stoppa registrazione in sicurezza
+    current_live_scene = None
+    current_preview_scene = None
+
+    # Safely stop recording
     if obs_client:
         try: 
             status = obs_client.get_record_status()
@@ -315,22 +345,80 @@ def handle_stop():
 
 @socketio.on('live_action')
 def handle_live_action(data):
+    global current_live_scene
     scene = data.get('scene')
     trans = data.get('transition', '').strip()
     dur = data.get('transition_duration') or 300
-    
+
     if obs_client and scene:
         if trans and trans.lower() not in ["cut", "taglio"]:
             try:
                 obs_client.set_current_scene_transition(trans)
                 obs_client.set_current_scene_transition_duration(int(dur))
             except: pass
-        try: 
+        try:
             obs_client.set_current_program_scene(scene)
-            trigger_physical_tally(scene) # Accende Tally Fisico
+            trigger_physical_tally(scene) # Turns on physical tally
         except: pass
-            
+
+    current_live_scene = scene
     socketio.emit('live_cut', {'scene': scene})
+
+# --- STUDIO MODE: PREVIEW / PROGRAM ---
+@socketio.on('set_preview_scene')
+def handle_set_preview_scene(data):
+    global current_preview_scene
+    scene = data.get('scene')
+    if not scene: return
+
+    if obs_client:
+        try:
+            status = obs_client.get_studio_mode_enabled()
+            if not status.studio_mode_enabled:
+                obs_client.set_studio_mode_enabled(True)
+        except Exception as e:
+            print(f"⚠️ Studio Mode Enable Error: {e}")
+        try:
+            obs_client.set_current_preview_scene(scene)
+        except Exception as e:
+            print(f"⚠️ Set Preview Scene Error: {e}")
+
+    current_preview_scene = scene
+    socketio.emit('preview_changed', {'scene': scene})
+
+@socketio.on('take_live')
+def handle_take_live(data):
+    global current_live_scene, current_preview_scene
+    data = data or {}
+    scene = current_preview_scene
+    if not scene: return
+
+    trans = data.get('transition', '').strip()
+    dur = data.get('transition_duration') or 300
+    # Whatever is in program right now is what the transition below will push
+    # into preview - OBS's studio mode transition always swaps the two, no
+    # matter which transition/duration is used, so this holds for all of them.
+    previous_program = current_live_scene
+
+    if obs_client:
+        if trans and trans.lower() not in ["cut", "taglio"]:
+            try:
+                obs_client.set_current_scene_transition(trans)
+                obs_client.set_current_scene_transition_duration(int(dur))
+            except: pass
+        try:
+            obs_client.trigger_studio_mode_transition()
+            current_preview_scene = previous_program
+        except Exception as e:
+            print(f"⚠️ Studio Mode Transition failed, falling back to direct cut: {e}")
+            try: obs_client.set_current_program_scene(scene)
+            except: pass
+        trigger_physical_tally(scene)
+
+    current_live_scene = scene
+    socketio.emit('live_cut', {'scene': scene})
+    if current_preview_scene:
+        socketio.emit('preview_changed', {'scene': current_preview_scene})
 
 @socketio.on('nudge_time')
 def handle_nudge(data):
@@ -355,15 +443,45 @@ def handle_urgent_msg(data):
 
 @socketio.on('intercom_audio')
 def handle_intercom_audio(data):
+    # Legacy blob-based intercom, kept only for backwards compatibility.
+    # Live clients now use the audio_stream PCM streaming events instead.
     socketio.emit('audio_broadcast', data, include_self=False)
+
+@socketio.on('audio_stream')
+def handle_audio_stream(data):
+    socketio.emit('audio_stream', data, include_self=False)
 
 @socketio.on('get_status_sync')
 def handle_sync():
-    global active_rundown, show_mode, is_playing
+    global active_rundown, show_mode, is_playing, current_live_scene, current_preview_scene
     socketio.emit('rundown_updated', active_rundown, room=request.sid)
-    socketio.emit('show_started', {'mode': show_mode}, room=request.sid)
+    socketio.emit('mode_changed', {'mode': show_mode}, room=request.sid)
     if is_playing:
+        socketio.emit('show_started', {'mode': show_mode}, room=request.sid)
         socketio.emit('status', {'msg': f'LIVE ({show_mode.upper()})'}, room=request.sid)
+        if current_live_scene:
+            socketio.emit('live_cut', {'scene': current_live_scene}, room=request.sid)
+        if current_preview_scene:
+            socketio.emit('preview_changed', {'scene': current_preview_scene}, room=request.sid)
+
+@socketio.on('req_director_sync')
+def handle_director_sync():
+    global active_rundown, show_mode, is_playing, is_paused, current_live_scene, current_preview_scene
+    global start_time, time_offset, pause_timestamp
+    elapsed = 0.0
+    if is_playing:
+        if is_paused: elapsed = (pause_timestamp - start_time) + time_offset
+        else: elapsed = (time.time() - start_time) + time_offset
+        if elapsed < 0: elapsed = 0.0
+    socketio.emit('director_sync', {
+        'is_playing': is_playing,
+        'is_paused': is_paused,
+        'mode': show_mode,
+        'rundown': active_rundown,
+        'elapsed': elapsed,
+        'live_scene': current_live_scene,
+        'preview_scene': current_preview_scene
+    }, room=request.sid)
 
 if __name__ == '__main__':
     if not os.path.exists(COMPILATIONS_FILE):

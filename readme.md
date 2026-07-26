@@ -16,10 +16,12 @@ Think of it as an automated brain for your live production:
 
 - 🎬 **Timeline Automation**: Plan your show in advance with precise durations  
 - 🔴 **OBS Auto-Switching**: Automatically cuts and transitions between OBS scenes  
+- 🎚️ **Studio Mode Switcher**: A real Preview/Program bus — send a scene to Preview (PRV), then TAKE it live via OBS's Studio Mode transition, or CUT straight to Program  
 - 📋 **Live Auto-Scrolling Rundown**: A dynamic script that follows the show in real-time  
-- 🎙️ **Push-To-Talk (PTT) Intercom**: Speak directly to your crew via browser  
+- 🎙️ **Realtime Intercom**: Low-latency streamed Push-To-Talk audio to your crew  
 - 🌐 **Webhook Triggers**: Fire external events (lights, audio, Resolume, etc.)  
 - 🎛️ **Manual Override**: Take control anytime with Quick Cuts  
+- 🔄 **Resilient to refresh**: Reloading any screen (F5) re-syncs it to the live show automatically  
 
 ---
 
@@ -29,9 +31,11 @@ The system is powered by a **Python backend (Flask + Socket.IO)** that communica
 
 It serves different interfaces:
 
-- **Director Station (`/`)** → Timeline, controls, NLE  
-- **Cameraman View (`/camera`)** → Current/next shots, tally, intercom  
-- **Talent View (`/talent`)** → Prompter, cues, alerts  
+- **Director Station (`/`)** → Timeline, controls, NLE, Preview/Program switcher  
+- **Cameraman View (`/camera`)** → Current/next shots, tally (including a "you're in preview" warning when the director arms your camera), intercom — responsive on phones/tablets  
+- **Talent View (`/talent`)** → Prompter, cues, alerts — responsive on phones/tablets  
+
+Every screen re-syncs itself from the server on load/reconnect, so refreshing the page or reconnecting after a dropped connection picks the show back up automatically.
 
 ---
 
@@ -85,6 +89,8 @@ Open:
 
 ✅ Status → **OBS Connected**
 
+ℹ️ You don't need to enable Studio Mode yourself — the app switches it on in OBS automatically the first time you send a scene to Preview.
+
 ---
 
 ## 🎥 Director Workflow
@@ -108,14 +114,26 @@ Open:
 
 ---
 
-### 3. Communication
+### 3. Switching (Preview/Program)
 
-- 🔔 Stage Pager → send alerts  
-- 🎙️ Hold PTT → talk to crew  
+Each scene has its own **PRV** / **CUT** buttons, stacked like a real switcher bus:
+
+- **CUT** (or its hotkey) → instant cut straight to Program  
+- **PRV** (or **Shift + hotkey**) → send the scene to Preview first  
+- **TAKE** → push whatever is in Preview to Program via OBS's Studio Mode transition (falls back to a direct cut if Studio Mode isn't available)  
+
+Pressing any of these while the show is in **Auto** automatically switches it to **Manual**, so you're never fighting the automation.
 
 ---
 
-### 4. Save & Export
+### 4. Communication
+
+- 🔔 Stage Pager → send alerts  
+- 🎙️ Hold PTT → talk to crew in realtime with streamed audio  
+
+---
+
+### 5. Save & Export
 
 - 💾 Save project  
 - 🗂️ Export CSV  
@@ -129,9 +147,20 @@ Open:
 app.py
 requirements.txt
 templates/
- ├── index.html
- ├── camera.html
- └── talent.html
+ ├── index.html      Director Station page shell
+ ├── camera.html     Cameraman View page shell
+ └── talent.html     Talent View page shell
+static/
+ ├── css/
+ │   ├── index.css
+ │   ├── camera.css
+ │   ├── talent.css
+ │   └── receiver-common.css   shared by camera.html + talent.html
+ └── js/
+     ├── index.js
+     ├── camera.js
+     ├── talent.js
+     └── receiver-common.js    shared by camera.html + talent.html
 ```
 
 ---

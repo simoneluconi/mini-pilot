@@ -1,0 +1,82 @@
+        :root { --tally-border: clamp(16px, 3.2vw, 60px); }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #000; color: white; margin: 0; padding: 0;
+            height: 100vh; box-sizing: border-box; border: var(--tally-border) solid #111;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            display: flex; flex-direction: column; overflow: hidden; position: relative;
+        }
+        /* Tally state is conveyed by a thick border PLUS a bleeding glow, so it reads
+           in peripheral vision without needing to look straight at the frame edge. */
+        body.live { border-color: #ff3b30; box-shadow: inset 0 0 clamp(30px, 6vw, 120px) rgba(255,59,48,0.65); }
+        body.preview { border-color: #34c759; box-shadow: inset 0 0 clamp(20px, 4vw, 90px) rgba(52,199,89,0.5); }
+        body.preview-blink { border-color: #ffcc00; box-shadow: inset 0 0 clamp(20px, 4vw, 90px) rgba(255,204,0,0.5); }
+        @keyframes dirPreviewPulse {
+            0% { border-color: #ffcc00; box-shadow: inset 0 0 clamp(20px, 4vw, 90px) rgba(255,204,0,0.35); }
+            50% { border-color: #7a6400; box-shadow: inset 0 0 clamp(20px, 4vw, 90px) rgba(255,204,0,0.75); }
+            100% { border-color: #ffcc00; box-shadow: inset 0 0 clamp(20px, 4vw, 90px) rgba(255,204,0,0.35); }
+        }
+        body.dir-preview { animation: dirPreviewPulse 1s infinite; }
+        body.dir-preview .cam-badge { background: rgba(255,204,10,0.2); border-color: #ffcc00; color: #ffcc00; }
+        body.dir-preview .status-text { color: #ffcc00; }
+        body.dir-preview .main-timer { color: #ffcc00; }
+        #dir-preview-badge { display: none; position: fixed; top: max(20px, var(--tally-border)); left: 50%; transform: translateX(-50%); background: #ffcc00; color: #000; font-weight: 900; font-size: clamp(14px, 2.5vw, 28px); padding: clamp(6px, 1.2vw, 10px) clamp(14px, 3vw, 28px); border-radius: 10px; letter-spacing: 2px; text-transform: uppercase; z-index: 9000; box-shadow: 0 6px 25px rgba(255,204,10,0.6); animation: dirPreviewBadgeBlink 0.8s infinite alternate; white-space: nowrap; }
+        @keyframes dirPreviewBadgeBlink { 0% { opacity: 1; } 100% { opacity: 0.55; } }
+        body.dir-preview #dir-preview-badge { display: block; }
+        #flash-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 9999; opacity: 0; pointer-events: none; transition: opacity 0.15s ease-out; }
+        #flash-overlay.flash { opacity: 0.8; transition: none; }
+        
+        #offline-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10000; display: none; flex-direction: column; align-items: center; justify-content: center; border: var(--tally-border) solid #ff3b30; box-sizing: border-box; animation: offlineBlink 1s infinite alternate; }
+        #offline-overlay h1 { font-size: clamp(28px, 7vw, 80px); color: #ff3b30; margin: 0; text-transform: uppercase; letter-spacing: 5px; text-align: center; padding: 0 20px; }
+        #offline-overlay p { font-size: clamp(14px, 2.6vw, 30px); color: white; margin-top: 20px; text-align: center; padding: 0 20px; }
+        @keyframes offlineBlink { 0% { border-color: #ff3b30; } 100% { border-color: #550000; } }
+
+        select, button { padding: clamp(10px, 2vw, 15px) clamp(16px, 3vw, 30px); font-size: clamp(15px, 2.5vw, 22px); margin: 10px; border-radius: 8px; border: none; outline: none; }
+
+        #viewfinder { display: none; flex-grow: 1; flex-direction: column; overflow: hidden; position: relative; z-index: 10; min-height: 0; }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; padding: clamp(8px, 1.6vw, 20px) clamp(12px, 2.4vw, 30px); flex-shrink: 0; z-index: 60; flex-wrap: wrap; gap: 8px; row-gap: 4px; }
+        .cam-badge { background: rgba(255,255,255,0.1); border: 2px solid #555; padding: clamp(6px, 1vw, 10px) clamp(10px, 1.6vw, 20px); border-radius: 12px; font-size: clamp(14px, 2.2vw, 24px); font-weight: 900; letter-spacing: 2px; text-transform: uppercase; white-space: nowrap; }
+        body.live .cam-badge { background: rgba(255,59,48,0.2); border-color: #ff3b30; color: #ff3b30; }
+        body.preview .cam-badge { background: rgba(52,199,89,0.2); border-color: #34c759; color: #34c759; }
+        .master-timecode { font-family: monospace; font-size: clamp(18px, 3.4vw, 38px); font-weight: bold; color: #ffcc00; text-shadow: 0 2px 10px rgba(0,0,0,0.8); white-space: nowrap; }
+        .top-right-controls { display: flex; align-items: center; gap: clamp(6px, 1.4vw, 15px); }
+        .real-time-clock { font-family: monospace; font-size: clamp(12px, 2.2vw, 24px); font-weight: bold; color: #888; background: #222; padding: clamp(4px, 0.8vw, 8px) clamp(8px, 1.4vw, 15px); border-radius: 8px; border: 1px solid #444; white-space: nowrap; }
+
+        .center-area { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2vh 3vw; text-align: center; overflow-y: auto; z-index: 60; min-height: 0; }
+        .status-text { font-size: clamp(18px, 5vw, 50px); font-weight: 900; letter-spacing: 6px; margin-bottom: 5px; color: #444; }
+        body.live .status-text { color: #ff3b30; text-shadow: 0 0 20px rgba(255,59,48,0.5); }
+        body.preview .status-text { color: #34c759; }
+        .main-timer { font-size: min(18vw, 22vh); font-family: monospace; font-weight: bold; line-height: 1; margin-bottom: 15px; transition: color 0.1s;}
+        body.live .main-timer { color: white; } body.preview .main-timer { color: white; } body.preview-blink .main-timer { color: #ffcc00; }
+
+        @keyframes timerFlash { 0%, 100% { color: #ff3b30; opacity: 1; } 50% { color: white; opacity: 0.5; } }
+        .main-timer.warning-end { animation: timerFlash 0.5s infinite; }
+
+        .lyrics-track { width: 92%; max-width: 1000px; background: rgba(255, 255, 255, 0.1); border-left: 5px solid #007aff; border-right: 5px solid #007aff; padding: clamp(8px, 1.6vw, 15px) clamp(14px, 3vw, 30px); border-radius: 12px; font-size: clamp(15px, 3.2vw, 32px); font-weight: 600; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,0.8); margin-bottom: 2vh; display: none; align-items: center; justify-content: center; min-height: 40px; text-align: center; box-sizing: border-box; }
+        .progress-container { width: 85%; max-width: 800px; height: clamp(8px, 1.4vh, 15px); background: #222; border-radius: 10px; border: 2px solid #444; margin-bottom: 2vh; overflow: hidden; display: none; flex-shrink: 0; }
+        .progress-bar { height: 100%; width: 100%; background: #ff3b30; transition: width 0.1s linear, background-color 0.2s; }
+        .metadata-box { background: rgba(20,20,20,0.9); border: 3px solid #333; border-radius: 16px; padding: clamp(10px, 1.8vw, 20px) clamp(14px, 2.6vw, 30px); width: 92%; max-width: 800px; display: none; flex-direction: column; gap: clamp(8px, 1.2vh, 15px); box-shadow: 0 10px 30px rgba(0,0,0,0.8); box-sizing: border-box; }
+        .metadata-box.visible { display: flex; }
+        .shot-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
+        .shot-number { font-size: clamp(18px, 3.2vw, 40px); color: #007aff; font-weight: 900; }
+        .shot-total { font-size: clamp(13px, 1.8vw, 24px); color: #888; font-weight: bold; margin-left: 10px;}
+        .shot-movement { font-size: clamp(13px, 2.2vw, 28px); color: #fff; font-weight: bold; background: #333; padding: clamp(3px, 0.6vw, 6px) clamp(8px, 1.4vw, 16px); border-radius: 10px; white-space: nowrap; }
+        .shot-note { font-size: clamp(14px, 2.6vw, 32px); color: #ffcc00; font-style: italic; font-weight: bold; border-top: 2px solid #444; padding-top: clamp(8px, 1.4vh, 15px); text-align: left; line-height: 1.3; }
+        .next-action-box { background: rgba(52, 199, 89, 0.15); border: 2px solid #34c759; border-radius: 10px; padding: clamp(6px, 1vw, 10px) clamp(10px, 1.6vw, 15px); margin-top: clamp(8px, 1.4vh, 15px); display: none; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
+        .next-action-label { color: #34c759; font-weight: bold; font-size: clamp(11px, 1.4vw, 16px); text-transform: uppercase; letter-spacing: 1px;}
+        .next-action-details { color: #fff; font-size: clamp(13px, 1.8vw, 20px); font-weight: bold; }
+        .compact-footer { background: #111; border-top: 1px solid #333; padding: 6px clamp(10px, 2vw, 20px); display: flex; align-items: center; height: auto; min-height: 36px; box-sizing: border-box; width: 100%; flex-shrink: 0; z-index: 60; }
+        .upcoming-label { font-weight: bold; color: #666; margin-right: clamp(8px, 1.4vw, 15px); font-size: clamp(10px, 1.2vw, 14px); letter-spacing: 1px; flex-shrink: 0; }
+        .upcoming-list { display: flex; overflow-x: auto; white-space: nowrap; gap: 10px; scrollbar-width: none; }
+        .upcoming-list::-webkit-scrollbar { display: none; }
+        .upcoming-item { background: #222; border: 1px solid #444; padding: 3px 8px; border-radius: 6px; font-size: clamp(11px, 1.2vw, 14px); color: #ddd; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+        .upcoming-time { color: #ffcc00; font-family: monospace; font-weight: bold; background: #000; padding: 2px 6px; border-radius: 4px;}
+
+        /* Landscape phones / very short viewports: the fluid clamp()s above already scale
+           down, but vertical space is tight enough to need extra squeeze here. */
+        @media (max-height: 420px) {
+            .top-bar { padding-top: 4px; padding-bottom: 4px; }
+            .lyrics-track { display: none !important; }
+            .status-text { margin-bottom: 0; }
+            .metadata-box { padding-top: 8px; padding-bottom: 8px; gap: 4px; }
+            .shot-note { display: none; }
+        }
