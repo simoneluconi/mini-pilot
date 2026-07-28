@@ -23,6 +23,11 @@
             const currentTime = data.time;
             masterTimecodeEl.innerText = formatTimecode(currentTime);
 
+            if (isShowRunning) {
+                const hasLoopCountdown = data.loop_remaining !== undefined && data.loop_remaining !== null;
+                statusTextEl.innerText = hasLoopCountdown ? `ON AIR — Next switch in ${Math.ceil(data.loop_remaining)}s` : "ON AIR";
+            }
+
             // The prompter reads the marker track directly instead of scene titles
             let currentMarker = rundown.find(c => c.type === 'marker' && currentTime >= c.start && currentTime < c.end);
 

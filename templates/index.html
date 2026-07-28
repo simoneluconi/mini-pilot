@@ -27,6 +27,7 @@
             <button class="btn-toolbar" onclick="exportCSV()" title="Export Rundown to Excel/CSV">🗂️ CSV</button>
             <button class="btn-toolbar" onclick="printRundown()" title="Print Camera Cards / Rundown">🖨️ Print</button>
             <button id="btn-lock" class="btn-toolbar" onclick="toggleLock()" title="Safe Mode: Lock timeline edits" style="min-width: 115px;">🔓 Unlocked</button>
+            <button id="btn-manual-view" class="btn-toolbar" onclick="toggleManualView()" title="Manual View Only: hide the rundown editor/table and timeline, keep only switcher + intercom + transport">🧹 Manual View Only</button>
             <button class="btn-toolbar" onclick="openSettings()" title="OBS Connection Settings">⚙️</button>
             <a href="/camera" target="_blank" class="cameraman-link">🎥 Cam</a>
             <a href="/talent" target="_blank" class="cameraman-link" style="border-color: rgba(255,214,10,0.5); color: var(--warning-color);">🎤 Tal</a>
@@ -177,7 +178,7 @@
             </div>
         </div>
 
-        <div class="strip-divider"></div>
+        <div class="strip-divider strip-divider-setup"></div>
 
         <div class="strip-section strip-master">
             <div class="row-inputs" style="width: 100%; margin-bottom: 12px;">
@@ -201,7 +202,10 @@
         <div class="strip-section strip-matrix">
             <div class="matrix-header">
                 <div class="input-label" style="margin: 0;">🎛️ PREVIEW / PROGRAM</div>
-                <button id="btn-take" class="btn-take" onclick="takeLive()" title="TAKE: push preview to program via the studio mode transition" disabled>⏎ TAKE <span class="btn-take-key">ENTER</span></button>
+                <div style="display:flex; align-items:stretch; gap:8px;">
+                    <button id="btn-loop-config" class="btn-loop-config" onclick="openLoopConfig()" title="Configure Loop Groups">⚙ Loops</button>
+                    <button id="btn-take" class="btn-take" onclick="takeLive()" title="TAKE: push preview to program via the studio mode transition" disabled>⏎ TAKE <span class="btn-take-key">ENTER</span></button>
+                </div>
             </div>
             <div class="switcher-panel">
                 <div class="switcher-row switcher-row-prv">
@@ -269,6 +273,45 @@
                 <div class="btn-row" style="margin-top: 20px;">
                     <button class="btn-primary" onclick="saveObsSettings()">🔌 Connect & Save</button>
                     <button class="btn-secondary" onclick="closeSettings()">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loop-config-modal" class="modal">
+        <div class="modal-content">
+            <h3 style="margin-top: 0; color: white; border-bottom: 1px solid #333; padding-bottom: 10px;">🔁 Loop Groups Setup</h3>
+            <div class="input-group" style="margin-top: 15px;">
+                <div id="loop-groups-list"></div>
+                <div class="btn-row" style="margin-top: 10px;">
+                    <button class="btn-primary" onclick="newLoopGroup()">➕ New Group</button>
+                </div>
+                <div id="loop-group-editor" style="display: none; margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;">
+                    <div>
+                        <label style="font-size: 11px; color: #888; font-weight: bold; text-transform: uppercase;">Group Name</label>
+                        <input type="text" id="loop-group-name-input" placeholder="e.g. Wide Cams" style="margin-top: 4px;">
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <label style="font-size: 11px; color: #888; font-weight: bold; text-transform: uppercase;">Scenes in Rotation</label>
+                        <div id="loop-group-scenes" class="loop-config-scene-list"></div>
+                    </div>
+                    <div class="row-inputs" style="margin-top: 10px;">
+                        <div style="flex: 1;">
+                            <label style="font-size: 11px; color: #888; font-weight: bold; text-transform: uppercase;">Interval (seconds)</label>
+                            <input type="number" id="loop-group-interval-input" value="10" min="1" style="margin-top: 4px;">
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; gap: 6px; margin-top: 18px;">
+                            <input type="checkbox" id="loop-group-random-input" style="width: auto; height: 14px; margin: 0; cursor: pointer;">
+                            <label for="loop-group-random-input" style="font-size: 11px; color: #888; font-weight: bold; cursor: pointer;">Random Order</label>
+                        </div>
+                    </div>
+                    <div class="btn-row" style="margin-top: 15px;">
+                        <button class="btn-primary" onclick="saveLoopGroupEditor()">💾 Save Group</button>
+                        <button class="btn-secondary" onclick="document.getElementById('loop-group-editor').style.display='none'">Cancel</button>
+                    </div>
+                </div>
+                <div class="btn-row" style="margin-top: 20px;">
+                    <button class="btn-secondary" onclick="closeLoopConfig()">Close</button>
                 </div>
             </div>
         </div>
