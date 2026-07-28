@@ -19,9 +19,6 @@
         body.dir-preview .cam-badge { background: rgba(255,204,10,0.2); border-color: #ffcc00; color: #ffcc00; }
         body.dir-preview .status-text { color: #ffcc00; }
         body.dir-preview .main-timer { color: #ffcc00; }
-        #dir-preview-badge { display: none; position: fixed; top: max(20px, var(--tally-border)); left: 50%; transform: translateX(-50%); background: #ffcc00; color: #000; font-weight: 900; font-size: clamp(14px, 2.5vw, 28px); padding: clamp(6px, 1.2vw, 10px) clamp(14px, 3vw, 28px); border-radius: 10px; letter-spacing: 2px; text-transform: uppercase; z-index: 9000; box-shadow: 0 6px 25px rgba(255,204,10,0.6); animation: dirPreviewBadgeBlink 0.8s infinite alternate; white-space: nowrap; }
-        @keyframes dirPreviewBadgeBlink { 0% { opacity: 1; } 100% { opacity: 0.55; } }
-        body.dir-preview #dir-preview-badge { display: block; }
         #flash-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 9999; opacity: 0; pointer-events: none; transition: opacity 0.15s ease-out; }
         #flash-overlay.flash { opacity: 0.8; transition: none; }
         

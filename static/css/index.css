@@ -118,6 +118,8 @@
         .btn-take:active:not(:disabled) { transform: translateY(0); }
         .btn-take:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
         .btn-take-key { font-size: 9px; font-weight: 800; letter-spacing: 1.5px; background: rgba(0,0,0,0.2); padding: 1px 6px; border-radius: 4px; }
+        .btn-loop-config { display: flex; align-items: center; justify-content: center; background: #1a1a1a; color: #ccc; border: 1px solid #444; padding: 0 16px; border-radius: 8px; font-weight: bold; font-size: 12px; letter-spacing: 0.5px; cursor: pointer; transition: 0.15s; }
+        .btn-loop-config:hover { background: #262626; color: #fff; border-color: #666; }
         /* Switcher panel: a real video-mixer bus layout — one full row of PRV
            buttons (one per scene) and, below it, one full row of CUT buttons.
            Each row scrolls horizontally on its own if there are many scenes. */
@@ -255,3 +257,38 @@
         /* MODALS */
         .modal { display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); backdrop-filter: blur(5px); align-items: center; justify-content: center; }
         .modal-content { width: 400px; max-width: 90%; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 25px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
+
+        /* MANUAL VIEW ONLY (declutter toggle) */
+        body.manual-view-active .workspace-upper,
+        body.manual-view-active .workspace-bottom,
+        body.manual-view-active .strip-setup,
+        body.manual-view-active .strip-divider-setup,
+        body.manual-view-active #handle-upper-strip,
+        body.manual-view-active #handle-strip-bottom {
+            display: none !important;
+        }
+        body.manual-view-active .live-control-strip { flex: 1 1 auto; }
+        body.manual-view-active .strip-matrix { flex: 2 1 0; }
+        /* Buttons stretch to fill whatever height the row actually has (instead of a
+           fixed px value) so they never overflow and get clipped by the row's
+           overflow-y: hidden, no matter the viewport or panel size. Width grows for
+           easier clicking; many scenes still just scroll horizontally (unchanged). */
+        body.manual-view-active .switcher-row-btns { align-items: stretch; }
+        body.manual-view-active .switcher-btn { width: 140px; height: auto; font-size: 15px; }
+        .btn-toolbar.view-active { border-color: var(--accent-color); color: var(--accent-color); background: rgba(10,132,255,0.12); }
+
+        /* LOOP GROUPS */
+        .switcher-btn-loop { border-style: dashed; border-color: #555; background: linear-gradient(180deg, #201a10, #14100a); }
+        .switcher-btn-loop .loop-icon { font-size: 16px; display: block; margin-bottom: 2px; }
+        .switcher-btn-loop:disabled { opacity: 0.35; cursor: not-allowed; }
+        .switcher-btn-loop.loop-armed { border-color: var(--warning-color); box-shadow: 0 0 10px rgba(255,214,10,0.4); }
+        .switcher-btn-loop.loop-pulsing { animation: loop-pulse 1s ease-in-out infinite; }
+        @keyframes loop-pulse {
+            0%, 100% { box-shadow: 0 0 8px rgba(255,214,10,0.5); border-color: var(--warning-color); }
+            50% { box-shadow: 0 0 20px rgba(255,214,10,0.9); border-color: #fff3b0; }
+        }
+        .loop-remaining-badge { display: block; font-size: 10px; color: var(--warning-color); font-weight: 900; margin-top: 2px; }
+        .loop-config-scene-list { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; margin-top: 6px; background: #000; border: 1px solid #333; border-radius: 6px; padding: 8px; }
+        .loop-config-scene-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #ccc; cursor: pointer; }
+        .loop-config-scene-item input { width: auto; height: 14px; margin: 0; }
+        .loop-group-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; background: #111; border: 1px solid #333; border-radius: 6px; margin-bottom: 6px; font-size: 12px; color: #ccc; }

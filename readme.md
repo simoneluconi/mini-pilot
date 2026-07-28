@@ -21,6 +21,8 @@ Think of it as an automated brain for your live production:
 - 🎙️ **Realtime Intercom**: Low-latency streamed Push-To-Talk audio to your crew  
 - 🌐 **Webhook Triggers**: Fire external events (lights, audio, Resolume, etc.)  
 - 🎛️ **Manual Override**: Take control anytime with Quick Cuts  
+- 🔁 **Loop Groups**: Define named groups of scenes that auto-cycle on their own timer, while still going through the normal Preview/Program pipeline  
+- 🧹 **Manual View Only**: Declutter the Director Station to just the switcher, intercom, and transport controls  
 - 🔄 **Resilient to refresh**: Reloading any screen (F5) re-syncs it to the live show automatically  
 
 ---
@@ -91,6 +93,8 @@ Open:
 
 ℹ️ You don't need to enable Studio Mode yourself — the app switches it on in OBS automatically the first time you send a scene to Preview.
 
+🔄 If OBS closes or the connection drops mid-show, the app keeps checking in the background and reconnects automatically as soon as OBS is reachable again — no need to reopen Settings.
+
 ---
 
 ## 🎥 Director Workflow
@@ -126,14 +130,34 @@ Pressing any of these while the show is in **Auto** automatically switches it to
 
 ---
 
-### 4. Communication
+### 4. Loop Groups
+
+Click **⚙ Loops** to open the Loop Groups panel, where you can create, edit, and delete named groups of scenes (e.g. "Wide Cams" = Scene 1/2/3), each with its own switch interval (in seconds) and a Random Order option.
+
+Every configured group shows up as its own dashed button in both the PRV and PROGRAM rows, right alongside the real scenes:
+
+- **PRV** on a group → arms its first scene as Preview  
+- **PROGRAM** on a group (or the global **TAKE** button, once armed) → cuts that scene live and starts auto-cycling through the group at its configured interval, picking each next scene sequentially or at random  
+- The button pulses with a live countdown while its group is cycling  
+- Only one group cycles at a time; taking any manual PRV/CUT/TAKE action on a real scene pauses it, and pressing PROGRAM on the group again restarts cycling from its first scene  
+- Camera and talent screens show the same auto-cycling switches as regular Preview/Program changes, including a countdown to the next switch  
+
+---
+
+### 5. Manual View Only
+
+Click **🧹 Manual View Only** in the toolbar to hide the rundown editor, rundown table, timeline, and SYNC SETUP panel, leaving only the switcher, intercom, and show transport (ARM/GO/Stop) — enlarged for fast, hands-on vision mixing. Click it again to restore the full layout; the choice is remembered across reloads.
+
+---
+
+### 6. Communication
 
 - 🔔 Stage Pager → send alerts  
 - 🎙️ Hold PTT → talk to crew in realtime with streamed audio  
 
 ---
 
-### 5. Save & Export
+### 7. Save & Export
 
 - 💾 Save project  
 - 🗂️ Export CSV  

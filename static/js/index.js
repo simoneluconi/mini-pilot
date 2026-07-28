@@ -11,6 +11,12 @@
         let lastRecordedItemId = null;
         let availableScenes = [];
 
+        let loopGroups = [];        // [{id, name, scenes, interval, random}]
+        let activeLoopId = null;
+        let loopActive = false;
+        let loopArmed = false;
+        let editingLoopGroupId = null;
+
         const HOTKEYS = ['1','2','3','4','5','6','7','8','9','0','q','w','e','r','t','y','u','i','o','p'];
         const palette = ["#ff9900", "#34c759", "#007aff", "#af52de", "#ff2d55", "#5856d6", "#e5c07b"];
         let sceneColors = {};
@@ -392,18 +398,32 @@
             availableScenes = scenes;
             scenes.forEach((s, i) => sceneColors[s] = palette[i % palette.length]);
             document.getElementById('scene-select').innerHTML = scenes.map(s => `<option value="${s}">${s}</option>`).join('');
-            
+            renderSwitcherRows();
+        });
+
+        function loopButtonsHtml(rowType) {
+            return loopGroups.map(g => {
+                const isActive = g.id === activeLoopId;
+                const cls = `switcher-btn switcher-btn-loop${isActive && loopActive ? ' loop-pulsing' : ''}${isActive && loopArmed ? ' loop-armed' : ''}`;
+                const fn = rowType === 'prv' ? `armLoopPreview('${g.id}')` : `startLoopCycle('${g.id}')`;
+                const idPrefix = rowType === 'prv' ? 'loop-btn-prv' : 'loop-btn-cut';
+                const badge = isActive ? `<span class="loop-remaining-badge" style="display:none;"></span>` : '';
+                return `<button class="${cls}" id="${idPrefix}-${g.id}" onclick="${fn}" title="${escapeHtml(g.name)} — Loop Group"><span class="key-badge">🔁</span><span>${escapeHtml(g.name)}</span>${badge}</button>`;
+            }).join('');
+        }
+
+        function renderSwitcherRows() {
             const prvRow = document.getElementById('switcher-prv-row');
             const cutRow = document.getElementById('switcher-cut-row');
-            prvRow.innerHTML = scenes.map((s, i) => {
+            prvRow.innerHTML = availableScenes.map((s, i) => {
                 let keyName = i < HOTKEYS.length ? HOTKEYS[i].toUpperCase() : '-';
                 return `<button class="switcher-btn" id="prv-btn-${i}" onclick="sendPreview(${i})" title="${s} — Shift+${keyName}: send to preview"><span class="key-badge">${keyName}</span><span>${s}</span></button>`;
-            }).join('');
-            cutRow.innerHTML = scenes.map((s, i) => {
+            }).join('') + loopButtonsHtml('prv');
+            cutRow.innerHTML = availableScenes.map((s, i) => {
                 let keyName = i < HOTKEYS.length ? HOTKEYS[i].toUpperCase() : '-';
                 return `<button class="switcher-btn" id="cut-btn-${i}" onclick="executeLiveCut(${i})" title="${s} — ${keyName}: direct cut"><span class="key-badge">${keyName}</span><span>${s}</span></button>`;
-            }).join('');
-        });
+            }).join('') + loopButtonsHtml('cut');
+        }
 
         socket.on('transitions_list', (transitions) => {
             if (transitions.length > 0) {
@@ -520,6 +540,19 @@
             'minipilot_size_upper', 'minipilot_size_strip', 80, 700, 150, 600);
         makeSplitter('handle-strip-bottom', document.querySelector('.live-control-strip'), document.querySelector('.workspace-bottom'), 'y',
             'minipilot_size_strip', 'minipilot_size_bottom', 150, 600, 80, 600);
+
+        const MANUAL_VIEW_KEY = 'minipilot_manual_view';
+        function applyManualView(active) {
+            document.body.classList.toggle('manual-view-active', active);
+            const btn = document.getElementById('btn-manual-view');
+            if (btn) btn.classList.toggle('view-active', active);
+        }
+        function toggleManualView() {
+            const active = !document.body.classList.contains('manual-view-active');
+            applyManualView(active);
+            localStorage.setItem(MANUAL_VIEW_KEY, active ? '1' : '0');
+        }
+        applyManualView(localStorage.getItem(MANUAL_VIEW_KEY) === '1');
 
         function escapeHtml(str) {
             return String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -674,6 +707,84 @@
 
             if (mode === 'record') logLiveRecordClip(sceneName, trans, transDur);
         }
+
+        function armLoopPreview(groupId) {
+            const mode = ensureManualMode();
+            if (!mode) return;
+            socket.emit('loop_arm_preview', { group_id: groupId });
+        }
+
+        function startLoopCycle(groupId) {
+            const mode = ensureManualMode();
+            if (!mode) return;
+            socket.emit('loop_start_cycle', { group_id: groupId });
+        }
+
+        function openLoopConfig() {
+            renderLoopGroupsList();
+            document.getElementById('loop-group-editor').style.display = 'none';
+            document.getElementById('loop-config-modal').style.display = 'flex';
+        }
+        function closeLoopConfig() {
+            document.getElementById('loop-config-modal').style.display = 'none';
+        }
+        function renderLoopGroupsList() {
+            document.getElementById('loop-groups-list').innerHTML = loopGroups.map(g => `
+                <div class="loop-group-row">
+                    <span>🔁 ${escapeHtml(g.name)} — ${g.scenes.length} scenes, ${g.interval}s${g.random ? ' 🔀' : ''}</span>
+                    <span>
+                        <button class="btn-secondary" onclick="editLoopGroup('${g.id}')">Edit</button>
+                        <button class="btn-secondary" onclick="deleteLoopGroup('${g.id}')">Delete</button>
+                    </span>
+                </div>`).join('') || `<span style="color:#666; font-style: italic;">No loop groups yet.</span>`;
+        }
+        function newLoopGroup() {
+            editingLoopGroupId = null;
+            document.getElementById('loop-group-name-input').value = '';
+            document.getElementById('loop-group-interval-input').value = 10;
+            document.getElementById('loop-group-random-input').checked = false;
+            document.getElementById('loop-group-scenes').innerHTML = availableScenes.map(s =>
+                `<label class="loop-config-scene-item"><input type="checkbox" value="${escapeHtml(s)}"> ${escapeHtml(s)}</label>`).join('');
+            document.getElementById('loop-group-editor').style.display = 'block';
+        }
+        function editLoopGroup(id) {
+            const g = loopGroups.find(x => x.id === id);
+            if (!g) return;
+            editingLoopGroupId = id;
+            document.getElementById('loop-group-name-input').value = g.name;
+            document.getElementById('loop-group-interval-input').value = g.interval;
+            document.getElementById('loop-group-random-input').checked = g.random;
+            document.getElementById('loop-group-scenes').innerHTML = availableScenes.map(s =>
+                `<label class="loop-config-scene-item"><input type="checkbox" value="${escapeHtml(s)}" ${g.scenes.includes(s) ? 'checked' : ''}> ${escapeHtml(s)}</label>`).join('');
+            document.getElementById('loop-group-editor').style.display = 'block';
+        }
+        function deleteLoopGroup(id) {
+            loopGroups = loopGroups.filter(g => g.id !== id);
+            socket.emit('loop_configure_groups', { groups: loopGroups });
+            renderLoopGroupsList();
+        }
+        function saveLoopGroupEditor() {
+            const name = document.getElementById('loop-group-name-input').value.trim() || 'Loop';
+            const scenes = Array.from(document.querySelectorAll('#loop-group-scenes input:checked')).map(cb => cb.value);
+            const interval = parseFloat(document.getElementById('loop-group-interval-input').value) || 10;
+            const random = document.getElementById('loop-group-random-input').checked;
+            if (scenes.length === 0) return;
+            const id = editingLoopGroupId || ('loop_' + Date.now());
+            const next = loopGroups.filter(g => g.id !== id);
+            next.push({ id, name, scenes, interval, random });
+            loopGroups = next;
+            socket.emit('loop_configure_groups', { groups: loopGroups });
+            document.getElementById('loop-group-editor').style.display = 'none';
+            renderLoopGroupsList();
+        }
+        socket.on('loop_groups_updated', (data) => {
+            loopGroups = data.loop_groups || [];
+            activeLoopId = data.active_loop_id;
+            loopActive = !!data.loop_active;
+            loopArmed = !!data.loop_armed;
+            renderSwitcherRows();
+            if (document.getElementById('loop-config-modal').style.display === 'flex') renderLoopGroupsList();
+        });
 
         // Physical key codes (keyboard-layout independent): plain key = CUT, Shift+key = PRV
         const HOTKEY_CODES = ['Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9','Digit0','KeyQ','KeyW','KeyE','KeyR','KeyT','KeyY','KeyU','KeyI','KeyO','KeyP'];
@@ -831,6 +942,9 @@
             document.querySelectorAll('.switcher-btn').forEach(b => b.classList.remove('active'));
             manualLiveSceneSync = ""; currentPreviewSceneSync = "";
             document.getElementById('btn-take').disabled = true;
+
+            loopActive = false; loopArmed = false; activeLoopId = null;
+            document.querySelectorAll('.switcher-btn-loop').forEach(b => b.classList.remove('loop-pulsing', 'loop-armed'));
         }
 
         socket.on('status', (data) => { if (!data.msg.includes('LIVE') && !data.msg.includes('ARMED')) resetLiveUI(); });
@@ -840,13 +954,22 @@
         socket.on('live_cut', (data) => { manualLiveSceneSync = data.scene; });
         socket.on('preview_changed', (data) => {
             currentPreviewSceneSync = data.scene;
+            loopArmed = !!data.loop_armed;
+            if (data.active_loop_id !== undefined) activeLoopId = data.active_loop_id;
             document.getElementById('btn-take').disabled = !currentPreviewSceneSync;
+            renderSwitcherRows();
         });
 
         socket.on('director_sync', (data) => {
             manualLiveSceneSync = data.live_scene || "";
             currentPreviewSceneSync = data.preview_scene || "";
             if (data.mode) document.getElementById('live-mode-select').value = data.mode;
+
+            loopGroups = data.loop_groups || [];
+            activeLoopId = data.active_loop_id;
+            loopActive = !!data.loop_active;
+            loopArmed = !!data.loop_armed;
+            renderSwitcherRows();
 
             if (data.is_playing) {
                 isPlaying = true; isArmed = false;
@@ -880,7 +1003,19 @@
             const s = Math.floor(data.time % 60).toString().padStart(2, '0');
             const ms = Math.floor((data.time % 1) * 10).toString();
             document.getElementById('status-bar').innerText = `${m}:${s}.${ms}`;
-            
+
+            const loopCycling = data.loop_remaining !== undefined && data.loop_remaining !== null;
+            loopActive = loopCycling;
+            document.querySelectorAll('.switcher-btn-loop').forEach(b => {
+                const isActiveGroupBtn = activeLoopId && b.id.endsWith(`-${activeLoopId}`);
+                b.classList.toggle('loop-pulsing', loopCycling && isActiveGroupBtn);
+                const badge = b.querySelector('.loop-remaining-badge');
+                if (badge) {
+                    badge.style.display = loopCycling && isActiveGroupBtn ? 'block' : 'none';
+                    if (loopCycling && isActiveGroupBtn) badge.innerText = Math.ceil(data.loop_remaining) + 's';
+                }
+            });
+
             try { timeline.setCustomTime(new Date(currentMs), 'cursor'); } catch(e) {}
             
             updateActiveRundownRow(currentLiveTime);

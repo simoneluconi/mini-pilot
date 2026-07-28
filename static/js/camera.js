@@ -46,13 +46,34 @@
             else lyricsTrackEl.innerHTML = `<span style="color: #888; font-style: italic;">🎵 No active cue</span>`;
 
             if (currentMode === 'override' || currentMode === 'record') {
+                const hasLoopCountdown = data.loop_remaining !== undefined && data.loop_remaining !== null && data.loop_interval;
+                const loopRemaining = hasLoopCountdown ? data.loop_remaining : 0;
+                const loopPercentage = hasLoopCountdown ? Math.max(0, Math.min(100, (loopRemaining / data.loop_interval) * 100)) : 0;
+
                 if (myScene === manualLiveScene) {
                     upcomingListEl.innerHTML = `<span style="color: #ffcc00; font-style: italic;">Director is cutting manually</span>`;
                     if(!wasLivePreviously) triggerCutFlash();
-                    wasLivePreviously = true; body.className = 'live'; statusTextEl.innerText = "ON AIR"; mainTimerEl.innerText = "LIVE"; mainTimerEl.style.color = "white"; mainTimerEl.classList.remove('warning-end'); progContainerEl.style.display = 'none'; nextActionBox.style.display = 'none'; shotNumberEl.innerText = "MANUAL CUT"; shotTotalEl.innerText = ""; shotMovementEl.style.display = "none"; shotNoteEl.innerText = "Director took manual control"; metadataBox.classList.add('visible');
+                    wasLivePreviously = true; body.className = 'live'; statusTextEl.innerText = "ON AIR"; nextActionBox.style.display = 'none'; shotNumberEl.innerText = "MANUAL CUT"; shotTotalEl.innerText = ""; shotMovementEl.style.display = "none";
+                    if (hasLoopCountdown) {
+                        mainTimerEl.innerText = loopRemaining.toFixed(1); mainTimerEl.style.color = "white";
+                        mainTimerEl.classList.toggle('warning-end', loopRemaining <= 3.0 && loopRemaining > 0.1);
+                        progContainerEl.style.display = 'block'; progBarEl.style.width = loopPercentage + "%"; progBarEl.style.background = "#ff3b30";
+                    } else {
+                        mainTimerEl.innerText = "LIVE"; mainTimerEl.style.color = "white"; mainTimerEl.classList.remove('warning-end'); progContainerEl.style.display = 'none';
+                    }
+                    shotNoteEl.style.display = "none";
+                    metadataBox.classList.add('visible');
                 } else if (myScene === previewScene) {
                     upcomingListEl.innerHTML = `<span style="color: #ffcc00; font-style: italic;">Director is cutting manually</span>`;
-                    wasLivePreviously = false; body.className = 'dir-preview'; statusTextEl.innerText = "PREVIEW"; mainTimerEl.innerText = "STANDBY"; mainTimerEl.style.color = "#ffcc00"; mainTimerEl.classList.remove('warning-end'); progContainerEl.style.display = 'none'; nextActionBox.style.display = 'none'; shotNumberEl.innerText = "IN PREVIEW"; shotTotalEl.innerText = ""; shotMovementEl.style.display = "none"; shotNoteEl.innerText = "Get ready — you may be cut live any moment"; metadataBox.classList.add('visible');
+                    wasLivePreviously = false; body.className = 'dir-preview'; statusTextEl.innerText = "PREVIEW"; nextActionBox.style.display = 'none'; shotNumberEl.innerText = "IN PREVIEW"; shotTotalEl.innerText = ""; shotMovementEl.style.display = "none";
+                    if (hasLoopCountdown) {
+                        mainTimerEl.innerText = loopRemaining.toFixed(1); mainTimerEl.style.color = "#ffcc00"; mainTimerEl.classList.remove('warning-end');
+                        progContainerEl.style.display = 'block'; progBarEl.style.width = loopPercentage + "%"; progBarEl.style.background = loopRemaining <= 3.0 ? "#ffcc00" : "#34c759";
+                    } else {
+                        mainTimerEl.innerText = "STANDBY"; mainTimerEl.style.color = "#ffcc00"; mainTimerEl.classList.remove('warning-end'); progContainerEl.style.display = 'none';
+                    }
+                    shotNoteEl.style.display = "none";
+                    metadataBox.classList.add('visible');
                 } else {
                     upcomingListEl.innerHTML = `<span style="color: #ffcc00; font-style: italic;">Director is cutting manually</span>`;
                     setStandby();

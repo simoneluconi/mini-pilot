@@ -11,6 +11,7 @@ import csv
 import io
 import urllib.request
 import urllib.parse
+import random
 from flask import Flask, render_template, request, jsonify, make_response, url_for
 from flask_socketio import SocketIO
 import obsws_python as obs
@@ -60,7 +61,31 @@ def connect_obs():
         obs_error = str(e)
         print(f"❌ OBS Connection Error: {e}")
 
+def _obs_reconnect_loop():
+    """Runs for the app's whole lifetime: periodically checks the OBS
+    connection is still alive (a dropped connection doesn't otherwise flip
+    obs_connected on its own) and retries connect_obs() while disconnected,
+    broadcasting obs_status whenever the connection state actually changes."""
+    global obs_connected, obs_error
+    while True:
+        socketio.sleep(5)
+        if obs_connected and obs_client:
+            try:
+                obs_client.get_version()
+            except Exception as e:
+                obs_connected = False
+                obs_error = str(e)
+                print(f"⚠️ OBS Connection Lost: {e}")
+                config = load_obs_config()
+                socketio.emit('obs_status', {'connected': False, 'error': obs_error, 'host': config['host'], 'port': config['port'], 'webhook_url': config.get('webhook_url', '')})
+        if not obs_connected:
+            connect_obs()
+            if obs_connected:
+                config = load_obs_config()
+                socketio.emit('obs_status', {'connected': True, 'error': '', 'host': config['host'], 'port': config['port'], 'webhook_url': config.get('webhook_url', '')})
+
 connect_obs()
+socketio.start_background_task(_obs_reconnect_loop)
 
 is_playing = False
 start_time = 0
@@ -74,6 +99,13 @@ pause_timestamp = 0.0
 
 current_live_scene = None
 current_preview_scene = None
+
+# --- LOOP GROUPS (auto-cycling virtual scenes) ---
+loop_groups = []           # list of {id, name, scenes, interval, random}
+active_loop_id = None      # id of the group currently armed/cycling, or None
+loop_active = False        # True while the active group is auto-cycling
+loop_armed = False         # True once the active group's first scene is armed as preview, until cycling starts
+loop_next_switch_at = 0.0  # time.time() deadline of the next auto-switch (meaningful only while loop_active)
 
 COMPILATIONS_FILE = 'compilations.json'
 
@@ -203,7 +235,15 @@ def run_show():
         else: elapsed = (time.time() - start_time) + time_offset
         
         if elapsed < 0: elapsed = 0.0
-        socketio.emit('timecode', {'time': elapsed})
+        active_group = _get_active_loop_group()
+        socketio.emit('timecode', {
+            'time': elapsed,
+            'loop_remaining': _compute_loop_remaining(),
+            'loop_interval': active_group.get('interval') if active_group else None
+        })
+
+        if loop_active and not is_paused and time.time() >= loop_next_switch_at:
+            _loop_advance()
 
         if show_mode == 'playback' and not is_paused:
             target_shot = None
@@ -275,7 +315,7 @@ def trigger_custom_webhook(item):
 @socketio.on('start_show')
 def handle_start(data):
     global is_playing, start_time, active_rundown, show_mode, force_timeline_update, time_offset, is_paused, triggered_webhooks
-    global current_live_scene, current_preview_scene
+    global current_live_scene, current_preview_scene, active_loop_id, loop_active, loop_armed, loop_next_switch_at
     if not is_playing:
         active_rundown = data.get('rundown', [])
         show_mode = data.get('mode', 'playback')
@@ -288,6 +328,10 @@ def handle_start(data):
         triggered_webhooks = set()
         current_live_scene = None
         current_preview_scene = None
+        active_loop_id = None
+        loop_active = False
+        loop_armed = False
+        loop_next_switch_at = 0.0
         socketio.emit('hold_state', {'held': False})
         
         if obs_client:
@@ -325,52 +369,42 @@ def handle_change_mode(data):
 @socketio.on('stop_show')
 def handle_stop():
     global is_playing, is_paused, current_live_scene, current_preview_scene
+    global active_loop_id, loop_active, loop_armed, loop_next_switch_at
     is_playing = False
     is_paused = False
     current_live_scene = None
     current_preview_scene = None
+    active_loop_id = None
+    loop_active = False
+    loop_armed = False
+    loop_next_switch_at = 0.0
 
     # Safely stop recording
     if obs_client:
-        try: 
+        try:
             status = obs_client.get_record_status()
             if status.output_active:
                 obs_client.stop_record()
                 print("⏹ OBS Master Recording Stopped.")
-        except Exception as e: 
+        except Exception as e:
             print(f"⚠️ OBS Record Stop Warning: {e}")
-        
+
     socketio.emit('status', {'msg': 'Stopped'})
     socketio.emit('hold_state', {'held': False})
 
-@socketio.on('live_action')
-def handle_live_action(data):
+# --- SHARED SCENE-SWITCH HELPERS (used by manual handlers and loop groups) ---
+def _cut_scene_live(scene):
     global current_live_scene
-    scene = data.get('scene')
-    trans = data.get('transition', '').strip()
-    dur = data.get('transition_duration') or 300
-
     if obs_client and scene:
-        if trans and trans.lower() not in ["cut", "taglio"]:
-            try:
-                obs_client.set_current_scene_transition(trans)
-                obs_client.set_current_scene_transition_duration(int(dur))
-            except: pass
         try:
             obs_client.set_current_program_scene(scene)
-            trigger_physical_tally(scene) # Turns on physical tally
+            trigger_physical_tally(scene)
         except: pass
-
     current_live_scene = scene
     socketio.emit('live_cut', {'scene': scene})
 
-# --- STUDIO MODE: PREVIEW / PROGRAM ---
-@socketio.on('set_preview_scene')
-def handle_set_preview_scene(data):
+def _set_preview(scene):
     global current_preview_scene
-    scene = data.get('scene')
-    if not scene: return
-
     if obs_client:
         try:
             status = obs_client.get_studio_mode_enabled()
@@ -382,14 +416,100 @@ def handle_set_preview_scene(data):
             obs_client.set_current_preview_scene(scene)
         except Exception as e:
             print(f"⚠️ Set Preview Scene Error: {e}")
-
     current_preview_scene = scene
-    socketio.emit('preview_changed', {'scene': scene})
+    socketio.emit('preview_changed', {'scene': scene, 'loop_armed': loop_armed, 'active_loop_id': active_loop_id})
+
+# --- LOOP GROUPS: rotation logic ---
+def _get_active_loop_group():
+    return next((g for g in loop_groups if g['id'] == active_loop_id), None)
+
+def _loop_pick_next(group, scene_just_cut):
+    scenes = group['scenes']
+    if not scenes: return None
+    if group.get('random'):
+        candidates = [s for s in scenes if s != scene_just_cut] or scenes
+        return random.choice(candidates)
+    try: idx = scenes.index(scene_just_cut)
+    except ValueError: idx = -1
+    return scenes[(idx + 1) % len(scenes)]
+
+def _loop_start_cycle():
+    """Start (or resume) auto-cycling of the active loop group: cut its
+    first configured scene live now, arm the following scene as preview,
+    and schedule the next auto-switch. Shared by the group's PROGRAM-row
+    click and by handle_take_live when the armed preview came from the
+    group's PREVIEW-row click."""
+    global loop_active, loop_armed, loop_next_switch_at
+    group = _get_active_loop_group()
+    if not group or not group['scenes']: return
+    first_scene = group['scenes'][0]
+    loop_armed = False
+    loop_active = True
+    _cut_scene_live(first_scene)
+    _set_preview(_loop_pick_next(group, first_scene))
+    loop_next_switch_at = time.time() + float(group.get('interval', 10))
+
+def _loop_advance():
+    """Called from run_show()'s tick when the active group's scheduled
+    switch is due: cut the currently-armed preview scene live, pick+arm
+    the next one."""
+    global loop_next_switch_at
+    group = _get_active_loop_group()
+    if not group or not group['scenes']: return
+    scene_to_cut = current_preview_scene or group['scenes'][0]
+    _cut_scene_live(scene_to_cut)
+    _set_preview(_loop_pick_next(group, scene_to_cut))
+    loop_next_switch_at = time.time() + float(group.get('interval', 10))
+
+def _compute_loop_remaining():
+    """Seconds until the next auto-switch, frozen at pause_timestamp while
+    HOLD is active — mirrors the existing elapsed-time pause idiom."""
+    if not loop_active: return None
+    reference = pause_timestamp if is_paused else time.time()
+    return max(0.0, loop_next_switch_at - reference)
+
+@socketio.on('live_action')
+def handle_live_action(data):
+    global loop_active
+    scene = data.get('scene')
+    trans = data.get('transition', '').strip()
+    dur = data.get('transition_duration') or 300
+
+    loop_active = False  # any manual direct cut pauses whichever loop is cycling
+
+    if obs_client and scene and trans and trans.lower() not in ["cut", "taglio"]:
+        try:
+            obs_client.set_current_scene_transition(trans)
+            obs_client.set_current_scene_transition_duration(int(dur))
+        except: pass
+
+    _cut_scene_live(scene)
+
+# --- STUDIO MODE: PREVIEW / PROGRAM ---
+@socketio.on('set_preview_scene')
+def handle_set_preview_scene(data):
+    global loop_active, loop_armed
+    scene = data.get('scene')
+    if not scene: return
+
+    # Arming a different real scene invalidates a stale loop-armed state,
+    # otherwise a later TAKE would incorrectly start cycling instead of
+    # taking the manually-chosen scene live.
+    loop_active = False
+    loop_armed = False
+
+    _set_preview(scene)
 
 @socketio.on('take_live')
 def handle_take_live(data):
-    global current_live_scene, current_preview_scene
+    global current_live_scene, current_preview_scene, loop_active, loop_armed
     data = data or {}
+
+    if loop_armed:
+        _loop_start_cycle()
+        return
+    loop_active = False  # manual TAKE on a real scene pauses whichever loop is cycling
+
     scene = current_preview_scene
     if not scene: return
 
@@ -420,6 +540,47 @@ def handle_take_live(data):
     if current_preview_scene:
         socketio.emit('preview_changed', {'scene': current_preview_scene})
 
+@socketio.on('loop_configure_groups')
+def handle_loop_configure_groups(data):
+    global loop_groups, active_loop_id, loop_active, loop_armed
+    data = data or {}
+    groups = []
+    for g in data.get('groups', []):
+        gid = g.get('id')
+        scenes = [s for s in g.get('scenes', []) if isinstance(s, str) and s]
+        if not gid or not scenes: continue
+        try: interval = max(1.0, float(g.get('interval', 10)))
+        except (TypeError, ValueError): interval = 10.0
+        groups.append({'id': gid, 'name': g.get('name') or gid, 'scenes': scenes,
+                        'interval': interval, 'random': bool(g.get('random', False))})
+    loop_groups = groups
+    if active_loop_id not in [g['id'] for g in loop_groups]:
+        active_loop_id = None
+        loop_active = False
+        loop_armed = False
+    socketio.emit('loop_groups_updated', {
+        'loop_groups': loop_groups, 'active_loop_id': active_loop_id,
+        'loop_active': loop_active, 'loop_armed': loop_armed
+    })
+
+@socketio.on('loop_arm_preview')
+def handle_loop_arm_preview(data):
+    global active_loop_id, loop_armed, loop_active
+    group = next((g for g in loop_groups if g['id'] == (data or {}).get('group_id')), None)
+    if not group: return
+    active_loop_id = group['id']
+    loop_active = False
+    loop_armed = True
+    _set_preview(group['scenes'][0])
+
+@socketio.on('loop_start_cycle')
+def handle_loop_start_cycle(data):
+    global active_loop_id
+    group_id = (data or {}).get('group_id')
+    if group_id:
+        active_loop_id = group_id
+    _loop_start_cycle()
+
 @socketio.on('nudge_time')
 def handle_nudge(data):
     global time_offset
@@ -427,14 +588,17 @@ def handle_nudge(data):
 
 @socketio.on('toggle_hold')
 def handle_toggle_hold():
-    global is_paused, pause_timestamp, time_offset
+    global is_paused, pause_timestamp, time_offset, loop_next_switch_at
     if not is_paused:
         is_paused = True
         pause_timestamp = time.time()
         socketio.emit('hold_state', {'held': True})
     else:
         is_paused = False
-        time_offset -= (time.time() - pause_timestamp)
+        pause_duration = time.time() - pause_timestamp
+        time_offset -= pause_duration
+        if loop_active:
+            loop_next_switch_at += pause_duration
         socketio.emit('hold_state', {'held': False})
 
 @socketio.on('send_urgent_message')
@@ -480,7 +644,12 @@ def handle_director_sync():
         'rundown': active_rundown,
         'elapsed': elapsed,
         'live_scene': current_live_scene,
-        'preview_scene': current_preview_scene
+        'preview_scene': current_preview_scene,
+        'loop_groups': loop_groups,
+        'active_loop_id': active_loop_id,
+        'loop_active': loop_active,
+        'loop_armed': loop_armed,
+        'loop_remaining': _compute_loop_remaining()
     }, room=request.sid)
 
 if __name__ == '__main__':
